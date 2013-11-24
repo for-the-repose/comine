@@ -1,0 +1,46 @@
+The GLibC heap mining library for gdb
+
+REQUIREMENTS
+
+* gdb-7.6 or newer build with python bindings. May be used also with
+    gdb-7.4, but this version has memory leaks in bingings which makes
+    library unusable for large cores.
+
+* binaries of all glibc SO files and binary of program being debugged.
+    All bins should be taken from native envinroment for program.
+    For core mining on an alien hosts special root directory with exact
+	native versions of libraries have to be prepared and passed to gdb
+	via solib-absolute-prefix and debug-file-directory commands.
+
+* debug symbols for glibc package, must me build with at least -g1;
+
+
+USAGE
+
+example of the library usage may be found in example/ directory. Miner
+initialization throws to stdout some  useful info about discovery progress.
+Typical successfull discovery log may look like this (heap disq command):
+
+  building glibc arena list
+  primary arena at 0x7f3b40bae620 found
+  arena #0 has top chunk at 0x1f29910 +129.7kb
+  data segment starts at 0x17d9000
+  main arena has contigous wild at 0x17d9000 7.4mb
+  arena #0 has 35 chunks and 2064b in 9 fastbins
+  arena #0 has 28 chunks and 60.1kb in 126 bins
+  collecting fragments for arena #0
+  found 1 fence points for arena #0
+  found 7.4mb in 1 fragments
+  arena #0 has at most of 0b unresolved data
+  heap has 1 arena items
+  mmap() threshold is 131072b, dyn=yes
+
+Good news here is the following lines
+
+> main arena has contigous wild at 0x17d9000 7.4mb
+> arena #0 has at most of 0b unresolved data
+
+This means that primary arena region (hols the most of heap data) may be
+completely discovered without any heuristic logic as it is contigous, i.e.
+without holes. And all data in the heap has been traversed.
+
