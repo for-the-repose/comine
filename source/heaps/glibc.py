@@ -2,10 +2,12 @@
 
 import gdb
 
-from mapper import Mapper, Singleton, log
+from mapper import log
 from maps   import MapRg, MapRing, MapRgOutOf
 from libc   import addr_t, ptr_t, size_t
 
+from iheap  import IHeap
+from heman  import HeMan
 from humans import Humans
 
 class AnalysisError(Exception):
@@ -20,19 +22,20 @@ class ErrorDamaged(Exception):
         Exception.__init__(s)
 
 
-class TheGlibcHeap(object):
+@HeMan.register
+class TheGlibcHeap(IHeap):
     ''' The GLibc heap validator and data miner '''
 
-    __metaclass__ = Singleton
-
-    def __init__(s):
+    def __init__(s, log, mapper):
         frame   = gdb.selected_frame()
+
+        s.__log     = log
+        s.__mapper  = mapper
+        s.__ready   = False
 
         s.__arena   = []
 
-        mappings = Mapper()
-
-        log(1, "building glibc arena list")
+        s.__log(1, "building glibc arena list")
 
         arena = frame.read_var('main_arena')
 
@@ -43,24 +46,24 @@ class TheGlibcHeap(object):
 
         arena = gdb.Value(arena.address).cast(arena_t)
 
-        log(1, 'primary arena at 0x%x found' % arena.cast(addr_t))
+        s.__log(1, 'primary arena at 0x%x found' % arena.cast(addr_t))
 
-        s.__arena.append(_Arena(arena, 0))
+        s.__arena.append(_Arena(arena, 0, s.__log, s.__mapper))
 
         while True:
             arena = arena['next']
 
-            if not mappings.validate(arena.cast(addr_t)):
+            if not s.__mapper.validate(arena.cast(addr_t)):
                 raise Exception('Invalid arena links')
 
             if s.__arena_by_addr(arena.cast(addr_t)): break
 
-            log(1, 'secondary arena #%i at 0x%x found'
+            s.__log(1, 'secondary arena #%i at 0x%x found'
                         % (len(s.__arena), arena.cast(addr_t)))
 
             s.__try_to_add_arena(arena)
 
-        log(1, "heap has %i arena items" % len(s.__arena))
+        s.__log(1, "heap has %i arena items" % len(s.__arena))
 
         s.__mp = frame.read_var('mp_')
 
@@ -70,13 +73,19 @@ class TheGlibcHeap(object):
             raise Exception('data segment base type invalid')
 
         s.__examine_mmaps()
+        s.__ready = True
+
+    @classmethod
+    def __who__(cls):   return 'glibc'
+
+    def __ready__(s):   return s.__ready
 
     def __try_to_add_arena(s, _arena):
         try:
-            arena = _Arena(_arena, len(s.__arena))
+            arena = _Arena(_arena, len(s.__arena), s.__log, s.__mapper)
 
         except ErrorDamaged as E:
-            log(1, 'cannot add arena at 0x%x, error %s'
+            s.__log(1, 'cannot add arena at 0x%x, error %s'
                         % (int(_arena.cast(addr_t)),  str(E)))
 
         else:
@@ -94,11 +103,11 @@ class TheGlibcHeap(object):
         s.__mmap_th     = int(s.__mp['mmap_threshold'])
         s.__mmap_dyn    = not bool(s.__mp['no_dyn_threshold'])
 
-        log(1, 'mmap() threshold is %ib, dyn=%s'
+        s.__log(1, 'mmap() threshold is %ib, dyn=%s'
                 % (s.__mmap_th, ['no', 'yes'][s.__mmap_dyn]))
 
         if s.__mmapped or s.__mmaps:
-            log(1, 'heap has %s in %i mmaps() and it is unresolved'
+            s.__log(1, 'heap has %s in %i mmaps() and it is unresolved'
                 % (Humans.bytes(s.__mmapped), s.__mmaps))
 
     def __arena_by_addr(s, at):
@@ -125,15 +134,16 @@ class TheGlibcHeap(object):
 class _Arena(object):
     FL_NON_CONTIGOUS    = 0x02
 
-    def __init__(s, struct, seq):
+    def __init__(s, struct, seq, log, mapper):
         if struct.type.code != gdb.TYPE_CODE_PTR:
             raise TypeError('pointer to struct is needed')
 
+        s.__log         = log
         s.__seq         = seq
         s.__primary     = (s.__seq == 0)
         s.__arena       = struct
         s.__mask        = 0
-        s.__mappings    = Mapper()
+        s.__mappings    = mapper
         s.__fence       = []
         s.__map         = MapRing()
 
@@ -159,7 +169,7 @@ class _Arena(object):
 
         _hu = Humans.bytes(len(s.__top))
 
-        log(1, 'arena #%i has top chunk at 0x%x +%s'
+        s.__log(1, 'arena #%i has top chunk at 0x%x +%s'
                 % (s.__seq, s.__top.__at__(), _hu))
 
         if s.__seq == 0:
@@ -181,14 +191,14 @@ class _Arena(object):
         s.__check_bins()
 
         if s.__err_out_of > 0:
-            log(1, '%i aliases out of wild of arena #%i'
+            s.__log(1, '%i aliases out of wild of arena #%i'
                         %(s.__err_out_of, s.__seq))
 
         s.__curb_the_wild()
 
         _dif = s.__sysmem - s.__map.__bytes__()
 
-        log(1, 'arena #%i has at most of %s unresolved data'
+        s.__log(1, 'arena #%i has at most of %s unresolved data'
                 % (s.__seq, Humans.bytes(_dif)))
 
     def __at__(s): return int(s.__arena.cast(addr_t))
@@ -200,7 +210,7 @@ class _Arena(object):
 
         mp = frame.read_var('mp_')['sbrk_base']
 
-        log(1, 'data segment starts at 0x%x' % mp.cast(addr_t))
+        s.__log(1, 'data segment starts at 0x%x' % mp.cast(addr_t))
 
         if s.contigous():
             _a1 = int(mp.cast(addr_t)) + s.__sysmem
@@ -211,14 +221,14 @@ class _Arena(object):
 
             s.__wild = MapRg((int(mp.cast(addr_t)), _a1))
 
-            log(1, 'main arena has contigous wild at 0x%x %s'
+            s.__log(1, 'main arena has contigous wild at 0x%x %s'
                     % (s.__wild.__rg__()[0], s.__wild.human()))
 
         else:
             s.__wild = MapRg()
             s.__base_seg = int(mp.cast(addr_t))
 
-            log(1, 'arena #%i has a scattered wild' % s.__seq)
+            s.__log(1, 'arena #%i has a scattered wild' % s.__seq)
 
     def __check_arena_heap(s):
         ''' Check secondaty heap arenas. It is always contogus '''
@@ -242,8 +252,8 @@ class _Arena(object):
 
         s.__wild = MapRg((low, end))
 
-        log(1, 'Arena #%i has wild at 0x%x %s'
-                % (s.__seq, s.__wild.__rg__()[0], s.__wild.human()))
+        s.__log(1, 'Arena #%i has wild at 0x%x %s'
+                    % (s.__seq, s.__wild.__rg__()[0], s.__wild.human()))
 
     def __check_fasts(s):
         _rg = s.__fasts.type.range()
@@ -260,8 +270,8 @@ class _Arena(object):
 
                 chunks += 1; _bytes += len(chunk)
 
-        log(1, 'arena #%i has %i chunks and %ib in %i fastbins'
-                % (s.__seq, chunks, _bytes, _rg[1]))
+        s.__log(1, 'arena #%i has %i chunks and %ib in %i fastbins'
+                    % (s.__seq, chunks, _bytes, _rg[1]))
 
     def __check_bins(s):
         chunks, _bytes = 0, 0
@@ -275,8 +285,8 @@ class _Arena(object):
 
         _hu = Humans.bytes(_bytes)
 
-        log(1, 'arena #%i has %i chunks and %s in %i bins'
-                % (s.__seq, chunks, _hu, _rg[1] >> 1))
+        s.__log(1, 'arena #%i has %i chunks and %s in %i bins'
+                    % (s.__seq, chunks, _hu, _rg[1] >> 1))
 
     def __walk_bins(s, validate = False):
         _rg = list(s.__bins.type.range()) + [2]
@@ -316,14 +326,14 @@ class _Arena(object):
             formal analisys may never found them all.
         '''
 
-        log(1, 'collecting fragments for arena #%i' % s.__seq)
+        s.__log(1, 'collecting fragments for arena #%i' % s.__seq)
 
         s.__wild.push(s.__top.__at__())
 
         s.__fence.append(s.__top.__at__() + len(s.__top))
         s.__fence.sort()
 
-        log(1, 'found %i fence points for arena #%i'
+        s.__log(1, 'found %i fence points for arena #%i'
                             % (len(s.__fence), s.__seq))
 
         if s.__wild.ami(MapRg.I_AM_THE_BEAST):
@@ -358,7 +368,7 @@ class _Arena(object):
             else:
                 raise AnalysisError('no alias points before fence')
 
-        log(1, 'found %s in %i fragments' %
+        s.__log(1, 'found %s in %i fragments' %
                     (s.__map.human_bytes(), len(s.__map)))
 
         if len(s.__wild) > 0:
@@ -458,17 +468,17 @@ class _Arena(object):
         proximity, rg = s.__map.lookup(at, exact = False)
 
         if proximity is None:
-            log(1, 'at 0x%x is not found in arena #%i' % (at, s.__seq))
+            s.__log(1, 'at 0x%x is not found in arena #%i' % (at, s.__seq))
 
         elif proximity == MapRing.MATCH_NEAR:
-            log(1, 'try traverse left rg=' + str(rg))
+            s.__log(1, 'try traverse left rg=' + str(rg))
 
             s.__traverse_left(rg)
 
             if rg.intersects(at):
                 return s.__lookup_rg(at, rg)
             else:
-                log(1, 'left traverse gave nothing')
+                s.__log(1, 'left traverse gave nothing')
 
         elif proximity == MapRing.MATCH_EXACT:
             return s.__lookup_rg(at, rg)
@@ -477,13 +487,13 @@ class _Arena(object):
             raise Exception('Unknown proximity=%i' % proximity)
 
     def __lookup_rg(s, at, rg):
-        log(8, 'at falls to fragment %s of arena #%i'
-                % ('[0x%x, 0x%x)' % rg.__rg__(), s.__seq))
+        s.__log(8, 'at falls to fragment %s of arena #%i'
+                    % ('[0x%x, 0x%x)' % rg.__rg__(), s.__seq))
 
         alias = rg.alias(at, alias = MapRg.ALIAS_BEFORE)
 
-        log(8, 'alias at 0x%x, distance=%s'
-                % (alias, Humans.bytes(at - alias)))
+        s.__log(8, 'alias at 0x%x, distance=%s'
+                    % (alias, Humans.bytes(at - alias)))
 
         for chunk in _Chunk(alias, _Chunk.TYPE_REGULAR):
             rel, offset = chunk.relation(at)
@@ -492,7 +502,7 @@ class _Arena(object):
 
             _rel = _Chunk.REL_NAMES.get(rel, '%i' % rel)
 
-            log(8, 'found chunk 0x%x, %s (%i), offset=%i'
+            s.__log(8, 'found chunk 0x%x, %s (%i), offset=%i'
                         % (chunk.__at__(), _rel, rel, offset))
 
             # TODO: lookup fastbin slots and top chunk
@@ -872,39 +882,3 @@ class _Chunk(object):
 
         return (size + mask) ^ ((size + mask) & mask)
 
-
-class cmd_heap(gdb.Command):
-    ''' Glibc heap miner '''
-
-    def __init__(s):
-        gdb.Command.__init__(s, "heap",
-                    gdb.COMMAND_OBSCURE,
-                    gdb.COMPLETE_NONE,
-                    True)
-
-
-class cmd_heap_lookup(gdb.Command):
-    ''' Lookup address at heap '''
-
-    def __init__(s):
-        gdb.Command.__init__(s, "heap lookup", gdb.COMMAND_OBSCURE)
-
-    def invoke(s, args, tty):
-        at = int(str(args) or '0', 0)
-
-        rel, offset, chunk = TheGlibcHeap().lookup(at)
-
-        if chunk:
-            print 'META 0x%x, %ib, %i' % chunk.meta()
-
-
-class cmd_heap_discover(gdb.Command):
-    ''' Discover all heaps structures '''
-
-    def __init__(s):
-        gdb.Command.__init__(s, "heap disq", gdb.COMMAND_OBSCURE)
-
-    def invoke(s, args, tty):
-        heap = TheGlibcHeap()
-
-for x in [cmd_heap, cmd_heap_lookup, cmd_heap_discover]: x()

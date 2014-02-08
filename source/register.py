@@ -8,7 +8,6 @@ _P_ADD      = [ '/generic', '/heaps' ]
 for x in _P_ADD: path.insert(0, _P_BASE + x)
 
 from mapper import Mapper 
-from heap   import TheGlibcHeap
 
 mapper = Mapper()
 
