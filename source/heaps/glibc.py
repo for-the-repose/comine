@@ -15,7 +15,7 @@ class ErrorDamaged(Exception):
 
     def __init__(s, msg):
         log(1, msg)
-        
+
         Exception.__init__(s)
 
 
@@ -32,14 +32,14 @@ class TheGlibcHeap(object):
         mappings = Mapper()
 
         log(1, "building glibc arena list")
-        
+
         arena = frame.read_var('main_arena')
 
         if arena.type.code != gdb.TYPE_CODE_STRUCT:
             raise Exception('invalid main arena symbol')
 
         arena_t = arena.type.pointer()
-    
+
         arena = gdb.Value(arena.address).cast(arena_t)
 
         log(1, 'primary arena at 0x%x found' % arena.cast(addr_t))
@@ -83,7 +83,7 @@ class TheGlibcHeap(object):
 
     def __examine_mmaps(s):
         ''' Analyse mmap() settings for the heap.
-        
+
             DEFAULT_MMAP_THRESHOLD_{MIN,MAX} preprocessor macro
             defines lower and upper limit of mmapped regions.
         '''
@@ -97,7 +97,7 @@ class TheGlibcHeap(object):
                 % (s.__mmap_th, ['no', 'yes'][s.__mmap_dyn]))
 
         if s.__mmapped or s.__mmaps:
-            log(1, 'heap has %s in %i mmaps() and it is unresolved' 
+            log(1, 'heap has %s in %i mmaps() and it is unresolved'
                 % ( MapRg.human_bytes(s.__mmapped), s.__mmaps))
 
     def __arena_by_addr(s, at):
@@ -191,7 +191,7 @@ class _Arena(object):
                 % (s.__seq, MapRg.human_bytes(_dif)))
 
     def __at__(s): return int(s.__arena.cast(addr_t))
-    
+
     def __check_data_segment(s):
         ''' Check primary arena layed out on data segment '''
 
@@ -246,7 +246,7 @@ class _Arena(object):
 
     def __check_fasts(s):
         _rg = s.__fasts.type.range()
-    
+
         chunks, _bytes = 0, 0
 
         for x in xrange(*_rg):
@@ -269,7 +269,7 @@ class _Arena(object):
             s.__push_alias_to_wild(chunk.__at__())
 
             chunks += 1; _bytes += len(chunk)
-        
+
         _rg = list(s.__bins.type.range()) + [2]
 
         _hu = MapRg.human_bytes(_bytes)
@@ -295,7 +295,7 @@ class _Arena(object):
 
             first = _Chunk(s.__bins[x], _Chunk.TYPE_BIN, _arena = s,
                             end = s.__bins[x+1], queue = x>>1)
-    
+
             for chunk in first: yield chunk
 
     def __push_alias_to_wild(s, alias):
@@ -316,7 +316,7 @@ class _Arena(object):
         '''
 
         log(1, 'collecting fragments for arena #%i' % s.__seq)
-    
+
         s.__wild.push(s.__top.__at__())
 
         s.__fence.append(s.__top.__at__() + len(s.__top))
@@ -357,7 +357,7 @@ class _Arena(object):
             else:
                 raise AnalysisError('no alias points before fence')
 
-        log(1, 'found %s in %i fragments' % 
+        log(1, 'found %s in %i fragments' %
                     (s.__map.human_bytes(), len(s.__map)))
 
         if len(s.__wild) > 0:
@@ -433,7 +433,7 @@ class _Arena(object):
 
     def __resolve_left(s, at, nodes):
         ''' Analyse tree build while left traverse and give estimated
-            left boundary for region. 
+            left boundary for region.
         '''
 
         while True:
@@ -458,7 +458,7 @@ class _Arena(object):
 
         if proximity is None:
             log(1, 'at 0x%x is not found in arena #%i' % (at, s.__seq))
-    
+
         elif proximity == MapRing.MATCH_NEAR:
             log(1, 'try traverse left rg=' + str(rg))
 
@@ -534,7 +534,7 @@ class _ErrorChunk(ErrorDamaged):
         s.msg       = msg
 
     def __str__(s):
-        return 'chunk at 0x%x: %s' % (s.chunk.__at__(), s.msg) 
+        return 'chunk at 0x%x: %s' % (s.chunk.__at__(), s.msg)
 
 
 class _Chunk(object):
@@ -553,7 +553,7 @@ class _Chunk(object):
     TYPE_LEFT           = 6
 
     REL_OUTOF           = 0     # out of any parts of current chunk
-    REL_CHUNK           = 1     # exactly points to aligned chunk 
+    REL_CHUNK           = 1     # exactly points to aligned chunk
     REL_HEADER          = 2     # falls to chunks internals data
     REL_BLOCK           = 3     # exactly points to first block byte
     REL_INSIDE          = 4     # somewhere inside of chunk payload
@@ -582,10 +582,10 @@ class _Chunk(object):
         s.__locate_type()
 
         s.__type    = kind_of or _Chunk.TYPE_REGULAR
-    
+
         if s.__type == _Chunk.TYPE_ALLOCATED:
             raw = (raw.cast(ptr_t) - _Chunk.OFFSET).cast(type_t)
-            
+
             kind_of = _Chunk.TYPE_REGULAR
 
             raise Exception('Not ready yet')
@@ -728,18 +728,18 @@ class _Chunk(object):
 
     def __blob__(s, gdbval = False):
         ''' Return blob that holds this chunk or char pointer '''
-    
+
         size = _Chunk.netto(s.__chunk)
 
         if gdbval is True:
             ptr = s.__chunk.cast(ptr_t) + _Chunk.OFFSET
-            
+
             return (size, ptr)
 
         else:
             inf = gdb.selected_inferior()
 
-            return inf.read_memory(s.__at__() + _Chunk.OFFSET, size) 
+            return inf.read_memory(s.__at__() + _Chunk.OFFSET, size)
 
     def __at__(s): return int(s.__chunk.cast(addr_t))
 
@@ -748,7 +748,7 @@ class _Chunk(object):
     def __len__(s): return _Chunk.csize(s.__chunk)
 
     def __netto__(s): return _Chunk.netto(s.__chunk)
-    
+
     def __eq__(s, chunk):
         if isinstance(chunk, _Chunk):
             return s.__at__() == chunk.__at__()
@@ -787,7 +787,7 @@ class _Chunk(object):
 
         elif s.__type == _Chunk.TYPE_BIN:
             caret = s.__chunk['fd']
-    
+
             if caret.cast(addr_t) == s.__end:
                 raise StopIteration()
 
@@ -834,7 +834,7 @@ class _Chunk(object):
         return s
 
     next = __next__
-    
+
     def is_gap(s): return len(s) == _Chunk.FENCE_SIZE
 
     @classmethod
@@ -876,7 +876,7 @@ class cmd_heap(gdb.Command):
     ''' Glibc heap miner '''
 
     def __init__(s):
-        gdb.Command.__init__(s, "heap", 
+        gdb.Command.__init__(s, "heap",
                     gdb.COMMAND_OBSCURE,
                     gdb.COMPLETE_NONE,
                     True)
@@ -907,5 +907,3 @@ class cmd_heap_discover(gdb.Command):
         heap = TheGlibcHeap()
 
 for x in [cmd_heap, cmd_heap_lookup, cmd_heap_discover]: x()
-
-
