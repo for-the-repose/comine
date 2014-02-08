@@ -6,6 +6,7 @@ from mapper import Mapper, Singleton, log
 from maps   import MapRg, MapRing, MapRgOutOf
 from libc   import addr_t, ptr_t, size_t
 
+from humans import Humans
 
 class AnalysisError(Exception):
     ''' Internal error of analytical core, must never happen '''
@@ -98,7 +99,7 @@ class TheGlibcHeap(object):
 
         if s.__mmapped or s.__mmaps:
             log(1, 'heap has %s in %i mmaps() and it is unresolved'
-                % ( MapRg.human_bytes(s.__mmapped), s.__mmaps))
+                % (Humans.bytes(s.__mmapped), s.__mmaps))
 
     def __arena_by_addr(s, at):
         for arena in s.__arena:
@@ -156,7 +157,7 @@ class _Arena(object):
 #       if s.__top.type.code != gdb.TYPE_CODE_PTR:
 #           raise Exception('Invalid top chunk member')
 
-        _hu = MapRg.human_bytes(len(s.__top))
+        _hu = Humans.bytes(len(s.__top))
 
         log(1, 'arena #%i has top chunk at 0x%x +%s'
                 % (s.__seq, s.__top.__at__(), _hu))
@@ -188,7 +189,7 @@ class _Arena(object):
         _dif = s.__sysmem - s.__map.__bytes__()
 
         log(1, 'arena #%i has at most of %s unresolved data'
-                % (s.__seq, MapRg.human_bytes(_dif)))
+                % (s.__seq, Humans.bytes(_dif)))
 
     def __at__(s): return int(s.__arena.cast(addr_t))
 
@@ -272,7 +273,7 @@ class _Arena(object):
 
         _rg = list(s.__bins.type.range()) + [2]
 
-        _hu = MapRg.human_bytes(_bytes)
+        _hu = Humans.bytes(_bytes)
 
         log(1, 'arena #%i has %i chunks and %s in %i bins'
                 % (s.__seq, chunks, _hu, _rg[1] >> 1))
@@ -482,7 +483,7 @@ class _Arena(object):
         alias = rg.alias(at, alias = MapRg.ALIAS_BEFORE)
 
         log(8, 'alias at 0x%x, distance=%s'
-                % (alias, MapRg.human_bytes(at - alias)))
+                % (alias, Humans.bytes(at - alias)))
 
         for chunk in _Chunk(alias, _Chunk.TYPE_REGULAR):
             rel, offset = chunk.relation(at)

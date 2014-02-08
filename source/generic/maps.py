@@ -1,6 +1,9 @@
-#__ LGPL 3.0, 2013 Alexander Soloviev (no.friday@yandex.ru)
+#__ LGPL 3.0, 2014 Alexander Soloviev (no.friday@yandex.ru)
 
 from bisect import bisect_left, bisect_right
+
+from humans import Humans
+
 
 class MapRing(object):
     ''' Collection of non-intersected map regions and alias points.
@@ -25,7 +28,7 @@ class MapRing(object):
         return reduce(lambda x, y: x + y, map(len, s.__regs), 0)
 
     def __repr__(s):
-        _hum = MapRg.human_bytes(s.__bytes__())
+        _hum = Humans.bytes(s.__bytes__())
 
         return '<MapRing %i regs, %s>' % (len(s), _hum)
 
@@ -63,7 +66,7 @@ class MapRing(object):
         else:
             return (None, None)
 
-    def human_bytes(s): return MapRg.human_bytes(s.__bytes__())
+    def human_bytes(s): return Humans.bytes(s.__bytes__())
 
 
 class MapRgError(Exception): pass
@@ -142,7 +145,7 @@ class MapRg(object):
     def human(s):
         ''' Return string with human readable region size '''
 
-        return 'wild' if None in s.__rg else MapRg.human_bytes(len(s))
+        return 'wild' if None in s.__rg else Humans.bytes(len(s))
 
     def ami(s, what):
         ''' Ask me who I am '''
@@ -153,26 +156,6 @@ class MapRg(object):
             return None in s.__rg
         else:
             raise ValueError('invalid attribute')
-
-    @classmethod
-    def human_bytes(cls, value):
-        v, ex = value, True
-        pref = ['b', 'kb', 'mb', 'gb', 'tb', 'pb', 'eb', 'zb', 'yb']
-
-        def _f(v, exact, x):
-            return '%s%.1f%s' % (['', '='][exact], v, pref[x])
-
-        if v < 1024: return '%ib' % v
-
-        for x in xrange(1, len(pref)):
-            q, v = (v & 0x3ff, v >> 10)
-
-            ex = ex and q == 0
-
-            if v & 0x3ff == v:
-                if v & 0x200: continue
-                    
-                return _f(v + q / 1024., ex, x)
 
     def catch(s, hint):
         ''' Found formal a wild region boundary using aliases '''

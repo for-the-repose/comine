@@ -2,34 +2,6 @@
 
 from struct     import Struct
 
-def hexdump(s, bpl = 16, ident = 0):
-    out = []
-
-    total = (len(s) + bpl - 1) / bpl
-
-    for x in xrange(total):
-        out.append(' ' * ident)
-        out.append('%3.3x' % (x * bpl,))
-
-        line = s[x*bpl: (x+1)*bpl]
-
-        for y in xrange(len(line)):
-            out.append(' %02.2x' % ord(line[y]))
-
-        out.append('   ' * (bpl - y))
-        out.append('  ')
-
-        for y in xrange(len(line)):
-            if 0x1f < ord(line[y]) < 0x80:
-                out.append(line[y])
-            else:
-                out.append('.')
-
-        out.append('\n')
-
-    return ''.join(out)
-
-
 def read_tlv(blob):
     offset, total = 0, len(blob)
 
