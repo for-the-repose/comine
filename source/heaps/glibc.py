@@ -6,8 +6,7 @@ from mapper import log
 from maps   import MapRg, MapRing, MapRgOutOf
 from libc   import addr_t, ptr_t, size_t
 
-from iheap  import IHeap
-from heman  import HeMan
+from heman  import HeMan, IHeap, Heap
 from humans import Humans
 
 class AnalysisError(Exception):
@@ -23,7 +22,7 @@ class ErrorDamaged(Exception):
 
 
 @HeMan.register
-class TheGlibcHeap(IHeap):
+class TheGlibcHeap(Heap):
     ''' The GLibc heap validator and data miner '''
 
     def __init__(s, log, mapper):
@@ -121,14 +120,13 @@ class TheGlibcHeap(IHeap):
             for chunk in arena.enum(*kl, **kw): yield chunk
 
     def lookup(s, at):
-        ''' Find chunk where given address is resides '''
-
         for arena in s.__arena:
-            triplet = arena.lookup(at)
+            result = arena.lookup(at)
 
-            if triplet: return triplet
-        else:
-            return (None, None, None)
+            if result[0] not in (IHeap.REL_OUTOF, IHeap.REL_UNKNOWN):
+                return result
+
+        return (IHeap.REL_OUTOF, None, None, None)
 
 
 class _Arena(object):
@@ -385,7 +383,7 @@ class _Arena(object):
             if at is not None:
                 relation, offset = chunk.relation(at)
 
-                if relation != _Chunk.REL_OUTOF:
+                if relation != IHeap.REL_OUTOF:
                     return (relation, offset, chunk)
         else:
             return (None, None, chunk)
@@ -467,10 +465,7 @@ class _Arena(object):
     def lookup(s, at):
         proximity, rg = s.__map.lookup(at, exact = False)
 
-        if proximity is None:
-            s.__log(1, 'at 0x%x is not found in arena #%i' % (at, s.__seq))
-
-        elif proximity == MapRing.MATCH_NEAR:
+        if proximity == MapRing.MATCH_NEAR:
             s.__log(1, 'try traverse left rg=' + str(rg))
 
             s.__traverse_left(rg)
@@ -483,8 +478,10 @@ class _Arena(object):
         elif proximity == MapRing.MATCH_EXACT:
             return s.__lookup_rg(at, rg)
 
-        else:
+        elif  proximity is not None:
             raise Exception('Unknown proximity=%i' % proximity)
+
+        return (IHeap.REL_OUTOF, None, None, None)
 
     def __lookup_rg(s, at, rg):
         s.__log(8, 'at falls to fragment %s of arena #%i'
@@ -496,18 +493,12 @@ class _Arena(object):
                     % (alias, Humans.bytes(at - alias)))
 
         for chunk in _Chunk(alias, _Chunk.TYPE_REGULAR):
-            rel, offset = chunk.relation(at)
+            relation, offset = chunk.relation(at)
 
-            if rel == _Chunk.REL_OUTOF: continue
+            if relation != IHeap.REL_OUTOF:
+                # TODO: lookup fastbin slots and top chunk
 
-            _rel = _Chunk.REL_NAMES.get(rel, '%i' % rel)
-
-            s.__log(8, 'found chunk 0x%x, %s (%i), offset=%i'
-                        % (chunk.__at__(), _rel, rel, offset))
-
-            # TODO: lookup fastbin slots and top chunk
-
-            return (rel, offset, chunk)
+                return (relation, chunk.inset(), offset, chunk.__netto__())
 
     def enum(s, callback = None, size = None, used = True):
         ''' Enum given type of objects in arena '''
@@ -563,17 +554,7 @@ class _Chunk(object):
     TYPE_FAST           = 5
     TYPE_LEFT           = 6
 
-    REL_OUTOF           = 0     # out of any parts of current chunk
-    REL_CHUNK           = 1     # exactly points to aligned chunk
-    REL_HEADER          = 2     # falls to chunks internals data
-    REL_BLOCK           = 3     # exactly points to first block byte
-    REL_INSIDE          = 4     # somewhere inside of chunk payload
-
     _TYPE_BINS = (TYPE_BIN, TYPE_FAST)
-
-    REL_NAMES = {
-            REL_CHUNK: 'chunk', REL_HEADER: 'header',
-            REL_BLOCK: 'block', REL_INSIDE: 'inside'}
 
     # TODO: implement smart calculation, as offset of fd_nextsize
     MIN_SIZE    = int(size_t.sizeof * 4)
@@ -651,18 +632,13 @@ class _Chunk(object):
         a = int(at - s.__at__())
 
         if not (0 <= a < len(s)):
-            return (_Chunk.REL_OUTOF, a)
+            return (IHeap.REL_OUTOF, a)
 
-        if a == 0:
-            return (_Chunk.REL_CHUNK, a)
+        elif a < _Chunk.OFFSET:
+            return (IHeap.REL_HEAD, a - _Chunk.OFFSET)
 
-        if a < _Chunk.OFFSET:
-            return (_Chunk.REL_HEADER, a)
-
-        if a == _Chunk.OFFSET:
-            return (_Chunk.REL_BLOCK, 0)
-
-        return (_Chunk.REL_INSIDE, a - _Chunk.OFFSET)
+        else:
+            return (IHeap.REL_CHUNK, a - _Chunk.OFFSET)
 
     def __repr__(s): return '<_Chunk at 0x%x, %x %ib>' \
                                 % ( s.__chunk.cast(addr_t),
