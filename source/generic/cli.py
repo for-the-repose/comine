@@ -2,8 +2,10 @@
 
 import gdb
 
+from struct import pack
+from iheap  import IHeap
 from heman  import HeMan
-from humans import Humans
+from humans import Humans, From
 
 class cmd_heap(gdb.Command):
     def __init__(s):
@@ -74,7 +76,7 @@ class cmd_heap_discover(gdb.Command):
         else:
             when, take = '', ''
 
-        print '%8s -> %6s %s%s' \
+        print '%-8s -> %-6s %s%s' \
                 % (heap.__who__(), state, when, take)
 
     def __show_disq_log(s, heap, level = 8):
@@ -101,14 +103,82 @@ class cmd_heap_lookup(gdb.Command):
     def invoke(s, args, tty):
         s.dont_repeat()
 
-        at = int(str(args) or '0', 0)
+        argv = args.split()
 
-        for impl in HeMan().enum():
-            rel, offset, chunk = impl.lookup(at)
+        alit, argv = argv[0], (argv[1:] if len(argv) > 1 else [])
 
-            if chunk:
-                kl = (impl.__who__(),) + chunk.meta()
+        kw, at  = {}, int(str(alit) or '0', 0)
 
-                print 'impl %s -> 0x%x, %ib, %i' % kl
+        if len(argv) == 1 and argv[0] == 'dump':
+            kw['dump'] = True
 
-for x in [cmd_heap, cmd_heap_lookup, cmd_heap_discover]: x()
+        elif len(argv) > 0:
+            raise Exception('unknown args=%s' % argv)
+
+        cmd_heap_lookup._lookup(at, **kw)
+
+    @staticmethod
+    def _lookup(at, ident = '', dump = None):
+        for impl, (rel, aligned, offset, size) in HeMan().lookup(at):
+            rlit = IHeap.REL_NAMES.get(rel, '?%u' % rel)
+            slit = '' if size is None else (', %ub' % size)
+
+            print '%simpl %s -> %s 0x%x %+i%s' \
+                    % (ident, impl.__who__(), rlit, aligned, offset, slit)
+
+            if dump is not None and size:
+                raw = Mapper().readvar(aligned, size, gdbval = False)
+
+                print Humans.hexdump(raw,  ident = len(ident) + 2)
+
+
+class cmd_maps(gdb.Command):
+    def __init__(s):
+        gdb.Command.__init__(s, "maps",
+                    gdb.COMMAND_OBSCURE,
+                    gdb.COMPLETE_NONE,
+                    True)
+
+    def invoke(s, args, tty):
+        s.dont_repeat()
+
+        argv = args.split()
+
+        sub, argv = argv[0], (argv[1:] if len(argv) > 1 else [])
+
+        if sub == 'list':
+            kw = {}
+
+            if len(argv) == 2 and argv[0] == 'larger':
+                kw['larger'] = From.bytes(argv[1])
+
+            elif len(argv) != 0:
+                raise Exception('unknown args %s' % argv)
+
+            for rg, _, _, trg  in Mapper().enum(**kw):
+                print Humans.region(rg), trg
+
+        elif sub == 'find':
+            look_heap = False;
+
+            if len(argv) == 2 and argv[1] == 'heap':
+                look_heap = True
+
+            elif len(argv) != 1:
+                raise Exception('Invalid args=%s' % argv)
+
+            sub = pack('Q',  int(argv[0], 0))
+
+            for seq, (rg, at) in enumerate(Mapper().search(sub)):
+                print "%2u: %x, +%x, [%x, %x) %s" \
+                        % (seq, at, at - rg[0], rg[0], rg[1], Humans.region(rg))
+
+                if look_heap is True:
+                    cmd_heap_lookup._lookup(at, '  ')
+
+        else:
+            raise Exception('unknown command %s' % sub)
+
+
+for x in [cmd_heap, cmd_heap_lookup, cmd_heap_discover, cmd_maps]: x()
+
