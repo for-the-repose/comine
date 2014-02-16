@@ -6,6 +6,24 @@ from mapper import Mapper, Singleton, log
 from trace  import trace_write
 from iheap  import IHeap
 
+
+class Sticker(type):
+    def __init__(cls, name, kl, kw):
+        super(Sticker, cls).__init__(name, kl, kw)
+
+    def __call__(cls, *kl, **kw):
+        inst = HeMan().get(cls.__who__(), meta = False)
+
+        if inst and not isinstance(inst, cls):
+            raise TypeError('HeMan() gave invalid heap instance')
+
+        return inst or super(Sticker, cls).__call__(*kl, **kw)
+
+
+class Heap(IHeap):
+    __metaclass__  = Sticker
+
+
 class HeMan(object):
     __metaclass__ = Singleton
 
@@ -23,6 +41,13 @@ class HeMan(object):
                 log(1, 'discovered heap %s' % name)
 
         s.__ready = True
+
+    def lookup(s, at):  #  -> { (impl, IHeap.lookup(at)) }
+        for impl in s.enum():
+            result = impl.lookup(at)
+
+            if result[0] not in (IHeap.REL_OUTOF, IHeap.REL_UNKNOWN):
+                yield (impl, result)
 
     def enum(s, all = False, meta = False):
         def _pre(z): return all or z.__ready__()
@@ -44,10 +69,12 @@ class HeMan(object):
         if issubclass(cls, IHeap):
             name = getattr(cls, '__who__')()
 
-            if name in s.__heaps:
+            inst = s.__heaps.get(name)
+
+            if inst and inst.__cls__ != cls:
                 log(1, 'heap %s already registered' % name)
 
-            else:
+            elif not inst:
                 s.__heaps[name] = _Inst(cls, s.__mapper, log)
 
                 log(1, 'registered new heap %s' % name)
@@ -70,8 +97,9 @@ class _Inst(object):
 
         s.__reset()
 
-    def __who__(s):
-        return s.__cls.__who__()
+    def __cls__(s):     return c.__cls
+
+    def __who__(s):     return s.__cls.__who__()
 
     def __impl__(s):
         return s.__impl if s.__impl else None
@@ -128,4 +156,4 @@ class _Inst(object):
         s.__log(lev, line)
 
 
-__init__ = (HeMan, IHeap)
+__init__ = (HeMan, IHeap, Heap)
