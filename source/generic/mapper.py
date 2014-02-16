@@ -7,7 +7,7 @@ from bisect import bisect_right
 import gdb
 
 from libc   import addr_t
-
+from proc   import Maps
 
 def log(lev, string):
     if lev < 8: stdout.write(string + '\n')
@@ -54,8 +54,10 @@ class Mapper(object):
         s.__bin         = None
         s.__dso         = {}
 
+        s.__infer   = gdb.selected_inferior()
+
         s.__read_maps_target()
-        s.__read_maps_sects()
+#        s.__read_maps_sects()
 
         log(1, 'Mapper ready, has %i regions and %i dso'
                     % (len(s.__regs), len(s.__dso)) )
@@ -100,6 +102,25 @@ class Mapper(object):
         if rec and (usage is None or rec[2] in usage):
             return rec
 
+    def enum(s, larger = None):
+        for rg, a, b, target in s.__regs:
+            if larger and rg[1] - rg[0] < larger:
+                continue
+
+            yield rg, a, b, target
+
+    def search(s, sub):
+        for rg, _, _, _ in s.enum():
+            at = rg[0]
+
+            while at and at < rg[1]:
+                at = s.__infer.search_memory(at, rg[1] - at, sub)
+
+                if at:
+                    yield (rg, at)
+
+                    at += len(sub)
+
     def __lookup_slow(s, at):
         for rec in s.__regs:
             rg = rec[0]
@@ -114,9 +135,6 @@ class Mapper(object):
 
             if (rec[0][0] <= at < rec[0][1]):
                 return rec
-
-    def __read_maps_sects(s):
-        pass
 
     def __read_maps_target(s):
         state = Mapper.TARGET_NONE
@@ -177,6 +195,13 @@ class Mapper(object):
                     state = Mapper.TARGET_CORE
                 elif g and g.group(1) == 'exec':
                     state = Mapper.TARGET_EXEC
+
+    def __read_maps_sects(s):
+        infer = gdb.selected_inferior()
+
+        with open('/proc/%u/maps' % infer.pid, 'r') as F:
+            for rg in map(Maps.parse, F):
+                pass
 
     @classmethod
     def readvar(cls, var, size, gdbval = True, constructor = None):
