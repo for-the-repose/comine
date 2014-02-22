@@ -6,12 +6,12 @@ import gdb
 def ptrtype(name):
     try:
         t = gdb.lookup_type(name)
-        
+
         return t.pointer()
 
     except:
         return None
-        
+
 
 try:
     addr_t  = gdb.lookup_type('uintptr_t')
@@ -25,4 +25,3 @@ except gdb.error as E:
     print 'Seems there is no debug symbols for GLibC library'
 
     raise
-

@@ -35,4 +35,3 @@ def read_str_08_arr(blob):
         yield (blob[offset:offset + size])
 
         offset += size
-

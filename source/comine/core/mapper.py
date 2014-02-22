@@ -6,8 +6,8 @@ from bisect import bisect_right
 
 import gdb
 
-from libc   import addr_t
-from proc   import Maps
+from comine.core.libc   import addr_t
+from comine.core.proc   import Maps
 
 def log(lev, string):
     if lev < 8: stdout.write(string + '\n')
@@ -22,7 +22,7 @@ class Singleton(type):
     def __call__(cls, *kl, **kw):
         if cls._instance is None:
             cls._instance = super(Singleton, cls).__call__(*kl, **kw)
-        
+
         return cls._instance
 
 
@@ -33,7 +33,7 @@ class Mapper(object):
 
     TARGET_NONE     = 0
     TARGET_CORE     = 1
-    TARGET_EXEC     = 2 
+    TARGET_EXEC     = 2
 
     REL_UNKNOWN     = 0
     REL_OWNER       = 1
@@ -68,7 +68,7 @@ class Mapper(object):
             def __init__(s, addr, ref):
                 s.point = addr
                 s.ref   = ref
-    
+
             def __int__(s):     return s.point
 
             def __cmp__(s, b):  return cmp(s.point, int(b))
@@ -82,7 +82,7 @@ class Mapper(object):
         if pointer >> 48: return False
 
         #__ lookup in the mappings table
-    
+
         return True
 
     def register(s, rg, relation, category, target):
@@ -190,7 +190,7 @@ class Mapper(object):
 
             else:
                 g = match('Local ([\w\s]+) file:', line)
-                
+
                 if g and g.group(1) == 'core dump':
                     state = Mapper.TARGET_CORE
                 elif g and g.group(1) == 'exec':
@@ -241,7 +241,7 @@ class _Binary(_MapEntity):
 
     def __init__(s):
         _MapEntity.__init__(s)
-    
+
     def __str__(s): return '<_Binary object>'
 
     def __repr__(s): return s.__str__()
@@ -254,11 +254,9 @@ class _DSO(_MapEntity):
         _MapEntity.__init__(s)
 
         s.__name = name.strip()
-    
+
     def __str__(s): return '<_DSO at %s>' % s.__name
 
     def __repr__(s): return s.__str__()
 
     def __name__(s): return s.__name
-
-

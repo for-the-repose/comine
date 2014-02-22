@@ -2,12 +2,12 @@
 
 from bisect import bisect_left, bisect_right
 
-from humans import Humans
+from comine.misc.humans import Humans
 
 
 class MapRing(object):
     ''' Collection of non-intersected map regions and alias points.
-    
+
         Alias points are aggregated to regions in the ring or keeped
         out of regions (single points).
     '''
@@ -58,7 +58,7 @@ class MapRing(object):
 
         if k > 0 and s.__regs[k-1].intersects(at):
             return (MapRing.MATCH_EXACT, s.__regs[k-1])
-        
+
         elif exact is not True and k < len(s.__regs):
             # TODO: anaylse region egdes types
             return (MapRing.MATCH_NEAR, s.__regs[k])
@@ -76,7 +76,7 @@ class MapRgOutOf(MapRgError): pass
 
 class MapRg(object):
     ''' Formal representation of contigous memory map region as [A, B).
-        
+
         Each memory range bounds may have either None, exact (EXACT)
         value or set of esimations LEAST and MOST. Estimations may
         exists both or only one of them. following conditions must be
@@ -122,7 +122,7 @@ class MapRg(object):
         s.__rg      = tuple(map(_rx, rg))
         s.__tags    = tags or MapRg.TAGS_DEFAULT
         s.__alias   = sorted(alias or [])
-    
+
         if not (s.__rg[0] <= s.__rg[1]):
             raise ValueError('invalid range values')
 
@@ -165,7 +165,7 @@ class MapRg(object):
 
         if len(s.__alias) < 1:
             raise Exception('too low alias points to catch')
-    
+
         right = max(s.__alias[-1], hint or s.__alias[-1])
 
         s.__rg = (s.__alias[0], right)
@@ -185,7 +185,7 @@ class MapRg(object):
                             s.__rg = (s.__rg[0], to)
 
 #       if tag is not None:
-#           if where < 0: s.__tags = (tag, s.__tags[1]) 
+#           if where < 0: s.__tags = (tag, s.__tags[1])
 #           if where > 0: s.__tags = (s.__tags[0], tag)
 
     def drop(s, at, alias): return s.cut(at, alias, drop = True)
@@ -270,4 +270,3 @@ class MapRg(object):
 
         else:
             raise TypeError('invalid object type=' + type(at))
-

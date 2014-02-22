@@ -3,9 +3,10 @@
 import gdb
 
 from struct import pack
-from iheap  import IHeap
-from heman  import HeMan
-from humans import Humans, From
+
+from comine.core.iheap  import IHeap
+from comine.core.heman  import HeMan
+from comine.misc.humans import Humans, From
 
 class cmd_heap(gdb.Command):
     def __init__(s):
@@ -183,4 +184,3 @@ class cmd_maps(gdb.Command):
 
 
 for x in [cmd_heap, cmd_heap_lookup, cmd_heap_discover, cmd_maps]: x()
-

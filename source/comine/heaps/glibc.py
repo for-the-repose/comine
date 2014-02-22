@@ -2,12 +2,11 @@
 
 import gdb
 
-from mapper import log
-from maps   import MapRg, MapRing, MapRgOutOf
-from libc   import addr_t, ptr_t, size_t
-
-from heman  import HeMan, IHeap, Heap
-from humans import Humans
+from comine.core.mapper import log
+from comine.core.maps   import MapRg, MapRing, MapRgOutOf
+from comine.core.libc   import addr_t, ptr_t, size_t
+from comine.core.heman 	import HeMan, IHeap, Heap
+from comine.misc.humans	import Humans
 
 class AnalysisError(Exception):
     ''' Internal error of analytical core, must never happen '''
@@ -860,4 +859,3 @@ class _Chunk(object):
             raise Exception('invalid align mask=0x%x' % mask)
 
         return (size + mask) ^ ((size + mask) & mask)
-

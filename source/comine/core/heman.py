@@ -2,9 +2,9 @@
 
 from time   import time
 
-from mapper import Mapper, Singleton, log
-from trace  import trace_write
-from iheap  import IHeap
+from comine.core.mapper import Mapper, Singleton, log
+from comine.core.trace  import trace_write
+from comine.core.iheap  import IHeap
 
 
 class Sticker(type):
