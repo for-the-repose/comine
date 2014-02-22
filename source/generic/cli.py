@@ -119,12 +119,14 @@ class cmd_heap_lookup(gdb.Command):
 
     @staticmethod
     def _lookup(at, ident = '', dump = None):
-        for impl, (rel, aligned, offset, size) in HeMan().lookup(at):
+        for impl, (rel, aligned, offset, size, gran) in HeMan().lookup(at):
             rlit = IHeap.REL_NAMES.get(rel, '?%u' % rel)
             slit = '' if size is None else (', %ub' % size)
+            gran = '' if gran is None else (' ~%ub' % gran)
 
-            print '%simpl %s -> %s 0x%x %+i%s' \
-                    % (ident, impl.__who__(), rlit, aligned, offset, slit)
+            print '%simpl %s -> %s 0x%x %+i%s%s' \
+                        % (ident, impl.__who__(), rlit,
+                            aligned, offset, slit, gran)
 
             if dump is not None and size:
                 raw = Mapper().readvar(aligned, size, gdbval = False)

@@ -126,7 +126,7 @@ class TheGlibcHeap(Heap):
             if result[0] not in (IHeap.REL_OUTOF, IHeap.REL_UNKNOWN):
                 return result
 
-        return (IHeap.REL_OUTOF, None, None, None)
+        return (IHeap.REL_OUTOF, None, None, None, None)
 
 
 class _Arena(object):
@@ -481,7 +481,7 @@ class _Arena(object):
         elif  proximity is not None:
             raise Exception('Unknown proximity=%i' % proximity)
 
-        return (IHeap.REL_OUTOF, None, None, None)
+        return (IHeap.REL_OUTOF, None, None, None, None)
 
     def __lookup_rg(s, at, rg):
         s.__log(8, 'at falls to fragment %s of arena #%i'
@@ -498,7 +498,7 @@ class _Arena(object):
             if relation != IHeap.REL_OUTOF:
                 # TODO: lookup fastbin slots and top chunk
 
-                return (relation, chunk.inset(), offset, chunk.__netto__())
+                return (relation, chunk.inset(), offset) + chunk.__netto__()
 
     def enum(s, callback = None, size = None, used = True):
         ''' Enum given type of objects in arena '''
@@ -562,6 +562,7 @@ class _Chunk(object):
     OFFSET      = int(size_t.sizeof * 2)
     ALIGN       = int(size_t.sizeof * 2)
     BRUTT       = int(size_t.sizeof * 1)
+    MINETT      = MIN_SIZE - BRUTT
 
     __attrs = ('type', 'chunk', 'end', 'queue', 'first', 'arena')
 
@@ -640,10 +641,9 @@ class _Chunk(object):
         else:
             return (IHeap.REL_CHUNK, a - _Chunk.OFFSET)
 
-    def __repr__(s): return '<_Chunk at 0x%x, %x %ib>' \
-                                % ( s.__chunk.cast(addr_t),
-                                    s.flag(0x7),
-                                    s.__netto__())
+    def __repr__(s):
+        return '<_Chunk at 0x%x, %x %ub ~%u>' \
+                    % ((s.__chunk.cast(addr_t), s.flag(0x7)) + s.__netto__())
 
     def __validate__(s, fence = False):
         _min = _Chunk.FENCE_SIZE if fence else _Chunk.MIN_SIZE
@@ -734,7 +734,10 @@ class _Chunk(object):
 
     def __len__(s): return _Chunk.csize(s.__chunk)
 
-    def __netto__(s): return _Chunk.netto(s.__chunk)
+    def __netto__(s):
+        size, gran = _Chunk.netto(s.__chunk), _Chunk.ALIGN
+
+        return (size, gran if size > _Chunk.MINETT else _Chunk.MINETT)
 
     def __eq__(s, chunk):
         if isinstance(chunk, _Chunk):
