@@ -6,6 +6,7 @@ from bisect import bisect_right
 
 import gdb
 
+from comine.core.exun   import DSO, Binary
 from comine.core.libc   import addr_t
 from comine.core.proc   import Maps
 
@@ -158,7 +159,7 @@ class Mapper(object):
                     name = (m.group(2) or '').strip()
 
                     if not name:
-                        if s.__bin is None: s.__bin = _Binary()
+                        if s.__bin is None: s.__bin = Binary()
 
                         s.__bin.push(name, rg)
 
@@ -169,7 +170,7 @@ class Mapper(object):
                             dso = s.__dso.get(name)
 
                             if dso is None:
-                                dso = _DSO(name)
+                                dso = DSO(name)
 
                                 s.__dso[name] = dso
 
@@ -228,35 +229,3 @@ class Mapper(object):
         return gdb.Value(var.address).cast(type_t)
 
 
-class _MapEntity(object):
-    def __init__(s):
-        s.__sections = []
-
-    def push(s, section, rg):
-        s.__sections.append((rg, section))
-
-
-class _Binary(_MapEntity):
-    ''' Binary executable object '''
-
-    def __init__(s):
-        _MapEntity.__init__(s)
-
-    def __str__(s): return '<_Binary object>'
-
-    def __repr__(s): return s.__str__()
-
-
-class _DSO(_MapEntity):
-    ''' Dynamic shared object '''
-
-    def __init__(s, name):
-        _MapEntity.__init__(s)
-
-        s.__name = name.strip()
-
-    def __str__(s): return '<_DSO at %s>' % s.__name
-
-    def __repr__(s): return s.__str__()
-
-    def __name__(s): return s.__name
