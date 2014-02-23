@@ -4,7 +4,7 @@ import gdb
 
 from struct import pack
 
-from comine.core.iheap  import IHeap
+from comine.iface.heap  import IHeap
 from comine.core.heman  import HeMan
 from comine.misc.humans import Humans, From
 
