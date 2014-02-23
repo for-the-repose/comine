@@ -8,8 +8,8 @@ import gdb
 from comine.iface.maps  import IMaps
 from comine.core.exun   import DSO, Binary
 from comine.core.libc   import addr_t
-from comine.core.proc   import Maps
 from comine.core.logger import log
+from comine.arch.proc   import Maps
 from comine.gdb.targets import Targets
 from comine.misc.types  import Singleton
 
