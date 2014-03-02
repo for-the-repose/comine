@@ -2,7 +2,7 @@
 
 import gdb
 
-from comine.core.mapper import log
+from comine.core.logger import log
 from comine.core.maps   import MapRg, MapRing, MapRgOutOf
 from comine.core.libc   import addr_t, ptr_t, size_t
 from comine.core.heman 	import HeMan, IHeap, Heap

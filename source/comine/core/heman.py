@@ -3,8 +3,9 @@
 from time   import time
 
 from comine.iface.heap  import IHeap
-from comine.core.mapper import Mapper, log
+from comine.core.mapper import Mapper
 from comine.core.trace  import trace_write
+from comine.core.logger import log
 from comine.misc.types  import Singleton
 
 class Sticker(type):

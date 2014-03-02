@@ -1,6 +1,5 @@
 #__ LGPL 3.0, 2013 Alexander Soloviev (no.friday@yandex.ru)
 
-from sys    import stdout
 from re     import match
 from bisect import bisect_right
 
@@ -10,11 +9,9 @@ from comine.iface.maps  import IMaps
 from comine.core.exun   import DSO, Binary
 from comine.core.libc   import addr_t
 from comine.core.proc   import Maps
+from comine.core.logger import log
 from comine.gdb.targets import Targets
 from comine.misc.types  import Singleton
-
-def log(lev, string):
-    if lev < 8: stdout.write(string + '\n')
 
 
 class Mapper(object):
