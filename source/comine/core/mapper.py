@@ -11,22 +11,10 @@ from comine.core.exun   import DSO, Binary
 from comine.core.libc   import addr_t
 from comine.core.proc   import Maps
 from comine.gdb.targets import Targets
+from comine.misc.types  import Singleton
 
 def log(lev, string):
     if lev < 8: stdout.write(string + '\n')
-
-
-class Singleton(type):
-    def __init__(cls, name, kl, kw):
-        super(Singleton, cls).__init__(name, kl, kw)
-
-        cls._instance = None
-
-    def __call__(cls, *kl, **kw):
-        if cls._instance is None:
-            cls._instance = super(Singleton, cls).__call__(*kl, **kw)
-
-        return cls._instance
 
 
 class Mapper(object):
