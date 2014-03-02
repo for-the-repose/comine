@@ -7,7 +7,7 @@ import gdb
 from comine.core.libc   import addr_t
 from comine.core.logger import log
 from comine.core.world  import World
-from comine.core.base   import Core
+from comine.core.base   import Core, Memory, Mappings
 from comine.misc.types  import Singleton
 from comine.misc.humans import Humans
 
@@ -24,6 +24,7 @@ class Mapper(object):
 
     def __init__(s):
         s.__mode        = None
+        s.__attached    = False
 
         s.__infer   = gdb.selected_inferior()
         s.__world   = World()
@@ -31,8 +32,15 @@ class Mapper(object):
         log(1, 'collecting memory in world...')
 
         s.__core    = Core(s)
+        s.__memory  = None
+        s.__maps    = Mappings(s)
 
         s.__discover_mode()
+
+        if s.__mode in (Mapper.MODE_LIVE, Mapper.MODE_VOLATILE):
+            s.__maps.use_pid(s.__infer.pid)
+
+            s.__memory = Memory(s)
 
     def __world__(s):   return s.__world
 
@@ -51,6 +59,9 @@ class Mapper(object):
         #__ lookup in the mappings table
 
         return True
+
+    def attach(s, path):
+        s.__maps.use_file(path)
 
     def __discover_mode(s):
         if len(s.__core) > 0:

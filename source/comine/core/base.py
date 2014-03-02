@@ -5,8 +5,10 @@ from comine.iface.world import EPhys, IOwner
 from comine.core.logger import log
 from comine.gdb.targets import Targets
 from comine.misc.humans import Humans
+from comine.maps.exten  import IExten
 from comine.maps.ring   import Ring, Span
 from comine.maps.tools  import Tools
+from comine.arch.proc   import Maps
 
 class Core(IOwner):
     "Core dump components discover"
@@ -54,6 +56,47 @@ class Memory(IOwner):
             s.__ring.make(span.__rg__(), exten = exten)
 
         s.__infer.register(s, s.__ring, provide = 'memory')
+
+
+class Mappings(IOwner):
+    def __init__(s, infer):
+        s.__infer   = infer
+        s.__ring    = Ring()    # maps ring
+        s.__mode    = None
+
+    def attach(func):
+        def _func(s, *kl, **kw):
+            if s.__mode is not None:
+                raise Exception('maps already discovered')
+
+            try:
+                return func(s, *kl, **kw)
+
+            finally:
+                if s.__mode is not None:
+                    s.__infer.register(s, s.__ring, provide = 'mmaps')
+
+        return _func
+
+    @attach
+    def use_file(s, path):
+        s.__mode = str(path)
+
+        s.__read_maps_procs(Maps.read(path))
+
+    @attach
+    def use_pid(s, pid):
+        s.__mode = int(pid)
+
+        s.__read_maps_procs(Maps.pid(int(pid)))
+
+    def __read_maps_procs(s, it):
+        mask = IMaps.FLAG_ALL
+
+        for place, flags, entity in it:
+            exten = EMaps(flags, mask, entity)
+
+            s.__ring.make(place, exten = exten)
 
 
 class EInfer(EPhys):
@@ -113,3 +156,23 @@ class ECore(EInfer):
 
 class EMem(EInfer):
     def __desc__(s):    return 'Mem'
+
+
+class EMaps(IExten):
+    __slots__ = ('_EMaps__flags', '_EMaps__mask', '_EMaps__entity')
+
+    def __init__(s, flags = None, mask = None, entity = None, **kw):
+        IExten.__init__(s, **kw)
+
+        s.__flags   = flags
+        s.__mask    = mask
+        s.__entity  = entity
+
+    def __desc__(s):
+        flit = IMaps.flags_to_sym(s.__flags, s.__mask)
+        elit = '?' if s.__entity is None else s.__entity
+
+        return 'Maps(%s %s)' % (flit, elit)
+
+    def extend(s, rg, force = False):
+        return True
