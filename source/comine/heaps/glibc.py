@@ -3,9 +3,12 @@
 import gdb
 
 from comine.core.logger import log
-from comine.core.maps   import MapRg, MapRing, MapRgOutOf
 from comine.core.libc   import addr_t, ptr_t, size_t
 from comine.core.heman 	import HeMan, IHeap, Heap
+from comine.maps.span   import Span
+from comine.maps.errors import MapOutOf
+from comine.maps.ring   import Ring
+from comine.maps.alias  import Alias
 from comine.misc.humans	import Humans
 
 class AnalysisError(Exception):
@@ -142,7 +145,7 @@ class _Arena(object):
         s.__mask        = 0
         s.__mappings    = mapper
         s.__fence       = []
-        s.__map         = MapRing()
+        s.__map         = Ring()
 
         s.__sysmem  = int(s.__arena['system_mem'])
         s.__bins = s.__arena['bins']
@@ -216,13 +219,13 @@ class _Arena(object):
             if _a1 != _a2:
                 raise Exception('invalid main arena')
 
-            s.__wild = MapRg((int(mp.cast(addr_t)), _a1))
+            s.__wild = Span(rg = (int(mp.cast(addr_t)), _a1), exten = Alias())
 
             s.__log(1, 'main arena has contigous wild at 0x%x %s'
                     % (s.__wild.__rg__()[0], s.__wild.human()))
 
         else:
-            s.__wild = MapRg()
+            s.__wild = Span(rg = (None, None), exten = Alias())
             s.__base_seg = int(mp.cast(addr_t))
 
             s.__log(1, 'arena #%i has a scattered wild' % s.__seq)
@@ -247,7 +250,7 @@ class _Arena(object):
 
         end = min(s.__top.__at__() + len(s.__top), end)
 
-        s.__wild = MapRg((low, end))
+        s.__wild = Span(rg = (low, end), exten = Alias())
 
         s.__log(1, 'Arena #%i has wild at 0x%x %s'
                     % (s.__seq, s.__wild.__rg__()[0], s.__wild.human()))
@@ -308,9 +311,9 @@ class _Arena(object):
 
     def __push_alias_to_wild(s, alias):
         try:
-            s.__wild.push(alias)
+            s.__wild.exten().push(alias)
 
-        except MapRgOutOf as E:
+        except MapOutOf as E:
             s.__err_out_of += 1
 
     def __curb_the_wild(s):
@@ -325,7 +328,9 @@ class _Arena(object):
 
         s.__log(1, 'collecting fragments for arena #%i' % s.__seq)
 
-        s.__wild.push(s.__top.__at__())
+        alias = s.__wild.exten(Alias)
+
+        alias.push(s.__top.__at__())
 
         s.__fence.append(s.__top.__at__() + len(s.__top))
         s.__fence.sort()
@@ -333,11 +338,12 @@ class _Arena(object):
         s.__log(1, 'found %i fence points for arena #%i'
                             % (len(s.__fence), s.__seq))
 
-        if s.__wild.ami(MapRg.I_AM_THE_BEAST):
-            s.__wild.push(s.__base_seg)
-            s.__wild.catch(hint = s.__fence[-1])
+        if s.__wild.ami(Span.I_AM_THE_BEAST):
+            alias.push(s.__base_seg)
 
-        elif s.__wild.ami(MapRg.I_AM_A_WILD):
+            s.__wild.extend(rg = alias.catch(hint = s.__fence[-1]))
+
+        elif s.__wild.ami(Span.I_AM_A_WILD):
             raise AnalysisError('oh my god, it is a wild...')
 
         while len(s.__fence) > 0:
@@ -349,18 +355,18 @@ class _Arena(object):
 
             if chunk.__at__() == b: s.__fence.pop(0)
 
-            rg = s.__wild.cut(chunk.__at__(), alias = MapRg.ALIAS_BEFORE)
+            span = s.__wild.cut(chunk.__at__(), keep = Span.KEEP_AFTER)
 
-            if rg is None or len(rg) == 0: break
+            if span is None or len(span) == 0: break
 
-            s.__map.push(rg)
+            s.__map.push(span)
 
-            if len(s.__wild) == 0: break
+            if s.__wild.__len__() < 1: break
 
-            at = s.__wild.alias(chunk.__at__(), alias = MapRg.ALIAS_AFTER)
+            at = alias.lookup(chunk.__at__(), alias = Alias.ALIAS_AFTER)
 
             if at is not None:
-                s.__wild.drop(at, MapRg.ALIAS_BEFORE)
+                s.__wild.cut(at, keep = Span.KEEP_AFTER)
 
             else:
                 raise AnalysisError('no alias points before fence')
@@ -368,8 +374,8 @@ class _Arena(object):
         s.__log(1, 'found %s in %i fragments' %
                     (s.__map.human_bytes(), len(s.__map)))
 
-        if len(s.__wild) > 0:
-            raise AnalysisError('the wild was not exhausted')
+        if s.__wild.__len__() > 0:
+            raise AnalysisError('the wild %s was not exhausted' % s.__wild)
 
     def __traverse_right(s, start, end, at = None):
         ''' Traverse chunks from left to right untill of fence point
@@ -437,7 +443,7 @@ class _Arena(object):
         left = s.__resolve_left(rg.__rg__()[0], nodes)
 
         if left < rg.__rg__()[0]:
-            rg.extend(-1, to = left, tag = MapRg.TAG_MOST)
+            rg.extend(where = -1, to = left, tag = Span.TAG_MOST)
 
     def __resolve_left(s, at, nodes):
         ''' Analyse tree build while left traverse and give estimated
@@ -464,7 +470,7 @@ class _Arena(object):
     def lookup(s, at):
         proximity, rg = s.__map.lookup(at, exact = False)
 
-        if proximity == MapRing.MATCH_NEAR:
+        if proximity == Ring.MATCH_NEAR:
             s.__log(1, 'try traverse left rg=' + str(rg))
 
             s.__traverse_left(rg)
@@ -474,7 +480,7 @@ class _Arena(object):
             else:
                 s.__log(1, 'left traverse gave nothing')
 
-        elif proximity == MapRing.MATCH_EXACT:
+        elif proximity == Ring.MATCH_EXACT:
             return s.__lookup_rg(at, rg)
 
         elif  proximity is not None:
@@ -482,11 +488,11 @@ class _Arena(object):
 
         return (IHeap.REL_OUTOF, None, None, None, None)
 
-    def __lookup_rg(s, at, rg):
+    def __lookup_rg(s, at, span):
         s.__log(8, 'at falls to fragment %s of arena #%i'
-                    % ('[0x%x, 0x%x)' % rg.__rg__(), s.__seq))
+                    % ('[0x%x, 0x%x)' % span.__rg__(), s.__seq))
 
-        alias = rg.alias(at, alias = MapRg.ALIAS_BEFORE)
+        alias = span.exten().lookup(at, alias = Alias.ALIAS_BEFORE)
 
         s.__log(8, 'alias at 0x%x, distance=%s'
                     % (alias, Humans.bytes(at - alias)))
