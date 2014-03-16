@@ -1,6 +1,8 @@
 #__ LGPL 3.0, 2014 Alexander Soloviev (no.friday@yandex.ru)
 
-class IHeap(object):
+from comine.iface.world import IOwner
+
+class IHeap(IOwner):
     REL_UNKNOWN = 0;    REL_OUTOF   = 1;    REL_ZERO    = 2
     REL_KEEP    = 3;    REL_FREE    = 4;    REL_CHUNK   = 5
     REL_HUGE    = 6;    REL_HEAD    = 7;    REL_INTERN  = 8
