@@ -1,17 +1,15 @@
 #__ LGPL 3.0, 2013 Alexander Soloviev (no.friday@yandex.ru)
 
 from re     import match
-from bisect import bisect_right
 
 import gdb
 
-from comine.iface.maps  import IMaps
-from comine.core.exun   import DSO, Binary
 from comine.core.libc   import addr_t
 from comine.core.logger import log
-from comine.arch.proc   import Maps
-from comine.gdb.targets import Targets
+from comine.core.world  import World
+from comine.core.base   import Core
 from comine.misc.types  import Singleton
+from comine.misc.humans import Humans
 
 
 class Mapper(object):
@@ -19,34 +17,30 @@ class Mapper(object):
 
     __metaclass__ = Singleton
 
+    MODE_CORE   = 1;    MODE_LIVE   = 2;    MODE_VOLATILE = 3
+
+    __SYM_MODE = { MODE_CORE : 'core', MODE_LIVE : 'live',
+                    MODE_VOLATILE : 'volatile' }
+
     def __init__(s):
-        s.__secs        = []
-        s.__maps        = []
-        s.__regs        = []
-        s.__flats       = []
-        s.__bin         = Binary()
-        s.__dso         = {}
+        s.__mode        = None
 
         s.__infer   = gdb.selected_inferior()
+        s.__world   = World()
 
-        s.__read_maps_target()
-#        s.__read_maps_sects()
+        log(1, 'collecting memory in world...')
 
-        log(1, 'Mapper ready, has %i regions and %i dso'
-                    % (len(s.__regs), len(s.__dso)) )
+        s.__core    = Core(s)
 
-        class _Rg(object):
-            __slots__ = ('point', 'ref')
+        s.__discover_mode()
 
-            def __init__(s, addr, ref):
-                s.point = addr
-                s.ref   = ref
+    def __world__(s):   return s.__world
 
-            def __int__(s):     return s.point
+    def search_memory(s, *kl, **kw):
+        return s.__infer.search_memory(*kl, **kw)
 
-            def __cmp__(s, b):  return cmp(s.point, int(b))
-
-        s.__idx_0 = sorted(map(lambda x: _Rg(x[0][0], x), s.__regs))
+    def register(s, *kl, **kw):
+        s.__world.push(*kl, **kw)
 
     def validate(s, pointer, ro = False):
         addr = int(pointer)
@@ -58,105 +52,27 @@ class Mapper(object):
 
         return True
 
-    def register(s, rg, target):
-        # TODO: walk through ranges and check intersecions
+    def __discover_mode(s):
+        if len(s.__core) > 0:
+            s.__mode = Mapper.MODE_CORE
 
-        s.__regs.append((rg, target))
+        else:
+            s.__mode = Mapper.MODE_LIVE
 
-    def flats(s, at):
-        for rg in s.__flats:
-            if rg[0] <= at < rg[1]: return rg
+        log(1, 'mapper works in mode %s'
+                    % (Mapper.__SYM_MODE.get(s.__mode),) )
 
-    def lookup(s, at, usage = None):
-        if not s.validate(at): return None
-
-        rec = s.__lookup_fast(at)
-
-        if rec and (usage is None or rec[2] in usage):
-            return rec
-
-    def enum(s, larger = None):
-        for rg, target in s.__regs:
-            if larger and rg[1] - rg[0] < larger:
-                continue
-
-            yield rg, None, None, target
-
-    def search(s, sub):
-        for rg, _, _, _ in s.enum():
-            at = rg[0]
-
-            while at and at < rg[1]:
-                at = s.__infer.search_memory(at, rg[1] - at, sub)
-
-                if at:
-                    yield (rg, at)
-
-                    at += len(sub)
-
-    def __lookup_slow(s, at):
-        for rec in s.__regs:
-            rg = rec[0]
-
-            if rg[0] <= at < rg[1]: return rec
-
-    def __lookup_fast(s, at):
-        x1 = bisect_right(s.__idx_0, at) - 1
-
-        if x1 > -1:
-            rec = s.__idx_0[x1].ref
-
-            if (rec[0][0] <= at < rec[0][1]):
-                return rec
-
-    def __read_maps_target(s):
-        for prov, rg, section, name in Targets.enum():
-            if prov == IMaps.PROV_CORE:
-                s.register(rg, None)
-                s.__flats.append(tuple(rg))
-
-            elif prov == IMaps.PROV_EXUN:
-                if not name:
-                    s.__bin.push(name, rg)
-
-                    target = s.__bin
-
-                else:
-                    if name is not None:
-                        dso = s.__dso.get(name)
-
-                        if dso is None:
-                            dso = DSO(name)
-
-                            s.__dso[name] = dso
-
-                    target = dso
-
-                target.push(section, rg)
-
-                s.register(rg, target)
-
-    def __read_maps_sects(s):
-        infer = gdb.selected_inferior()
-
-        with open('/proc/%u/maps' % infer.pid, 'r') as F:
-            for rg in map(Maps.parse, F):
-                pass
-
-    @classmethod
-    def readvar(cls, var, size, gdbval = True, constructor = None):
+    def readvar(s, var, size, gdbval = True, constructor = None):
         ''' Read blob from given memory location '''
 
         if gdbval is True:
             return var
 
         else:
-            inf = gdb.selected_inferior()
-
             if isinstance(var, gdb.Value):
                 var = int(var.cast(addr_t))
 
-            blob = inf.read_memory(var, size)
+            blob = s.__infer.read_memory(var, size)
 
             return (constructor or (lambda x: x))(blob)
 
