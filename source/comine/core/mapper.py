@@ -8,6 +8,7 @@ from comine.core.libc   import addr_t
 from comine.core.logger import log
 from comine.core.world  import World
 from comine.core.base   import Core, Memory, Mappings
+from comine.core.exun   import Exuns
 from comine.misc.types  import Singleton
 from comine.misc.humans import Humans
 
@@ -33,6 +34,7 @@ class Mapper(object):
 
         s.__core    = Core(s)
         s.__memory  = None
+        s.__exuns   = Exuns(s)
         s.__maps    = Mappings(s)
 
         s.__discover_mode()
