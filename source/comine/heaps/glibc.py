@@ -4,12 +4,12 @@ import gdb
 
 from comine.core.logger import log
 from comine.core.libc   import addr_t, ptr_t, size_t
-from comine.core.heman 	import HeMan, IHeap, Heap
+from comine.core.heman  import HeMan, IHeap, Heap
 from comine.maps.span   import Span
 from comine.maps.errors import MapOutOf
 from comine.maps.ring   import Ring
 from comine.maps.alias  import Alias
-from comine.misc.humans	import Humans
+from comine.misc.humans import Humans
 
 class AnalysisError(Exception):
     ''' Internal error of analytical core, must never happen '''
@@ -33,6 +33,7 @@ class TheGlibcHeap(Heap):
         s.__log     = log
         s.__mapper  = mapper
         s.__ready   = False
+        s.__ring    = Ring()
 
         s.__arena   = []
 
@@ -49,7 +50,7 @@ class TheGlibcHeap(Heap):
 
         s.__log(1, 'primary arena at 0x%x found' % arena.cast(addr_t))
 
-        s.__arena.append(_Arena(arena, 0, s.__log, s.__mapper))
+        s.__arena.append(s.__make_arena(arena, 0))
 
         while True:
             arena = arena['next']
@@ -76,6 +77,8 @@ class TheGlibcHeap(Heap):
         s.__examine_mmaps()
         s.__ready = True
 
+        mapper.__world__().push(s, s.__ring, provide = 'heap')
+
     @classmethod
     def __who__(cls):   return 'glibc'
 
@@ -83,7 +86,7 @@ class TheGlibcHeap(Heap):
 
     def __try_to_add_arena(s, _arena):
         try:
-            arena = _Arena(_arena, len(s.__arena), s.__log, s.__mapper)
+            arena = s.__make_arena(_arena, len(s.__arena))
 
         except ErrorDamaged as E:
             s.__log(1, 'cannot add arena at 0x%x, error %s'
@@ -91,6 +94,9 @@ class TheGlibcHeap(Heap):
 
         else:
             s.__arena.append(arena)
+
+    def __make_arena(s, _arena, seq):
+        return _Arena(_arena, seq, s.__ring, s.__log, s.__mapper)
 
     def __examine_mmaps(s):
         ''' Analyse mmap() settings for the heap.
@@ -115,26 +121,76 @@ class TheGlibcHeap(Heap):
         for arena in s.__arena:
             if int(arena.__at__()) == int(at): return arena
 
-    def enum(s, *kl, **kw):
-        ''' Walk through all of known chunks in my heap '''
-
-        for arena in s.__arena:
-            for chunk in arena.enum(*kl, **kw): yield chunk
-
     def lookup(s, at):
-        for arena in s.__arena:
-            result = arena.lookup(at)
+        proximity, rg = s.__ring.lookup(at, exact = False)
 
-            if result[0] not in (IHeap.REL_OUTOF, IHeap.REL_UNKNOWN):
-                return result
+        if proximity == Ring.MATCH_NEAR:
+            if False: # stub, have to be reworked
+                s.__log(1, 'try traverse left rg=' + str(rg))
+
+                s.__traverse_left(rg)
+
+                if rg.intersects(at):
+                    return s.__lookup_rg(at, rg)
+                else:
+                    s.__log(1, 'left traverse gave nothing')
+
+        elif proximity == Ring.MATCH_EXACT:
+            return s.__lookup_rg(at, rg)
+
+        elif  proximity is not None:
+            raise Exception('Unknown proximity=%i' % proximity)
 
         return (IHeap.REL_OUTOF, None, None, None, None)
+
+    def enum(s, callback = None, size = None, used = True):
+        ''' Walk through all of known chunks in my heap '''
+
+        if used is True:
+            return s.__enum_used(callback, size)
+
+        elif size is not None:
+            raise Exception('cannot match block size for free list')
+
+        else:
+            raise Exception('not implemented')
+
+    def __lookup_rg(s, at, span):
+        alias = span.exten().lookup(at, alias = Alias.ALIAS_BEFORE)
+
+        s.__log(8, 'alias at 0x%x, distance=%s'
+                    % (alias, Humans.bytes(at - alias)))
+
+        for chunk in _Chunk(alias, _Chunk.TYPE_REGULAR):
+            relation, offset = chunk.relation(at)
+
+            if relation != IHeap.REL_OUTOF:
+                # TODO: lookup fastbin slots and top chunk
+
+                return (relation, chunk.inset(), offset) + chunk.__netto__()
+
+    def __enum_used(s, callback = None, size = None):
+        ''' Enum given type of objects in arena '''
+
+        if size is not None: size = set(map(_Chunk.round, size))
+
+        for span in s.__ring:
+            start, end = span.__rg__()
+
+            for chunk in _Chunk(start, _Chunk.TYPE_REGULAR, end = end):
+                if size is not None and len(chunk) not in size:
+                    continue
+
+                if chunk.__at__() == s.__top.__at__():
+                    break
+
+                if chunk.is_used(): yield chunk
 
 
 class _Arena(object):
     FL_NON_CONTIGOUS    = 0x02
 
-    def __init__(s, struct, seq, log, mapper):
+    def __init__(s, struct, seq, ring, log, mapper):
         if struct.type.code != gdb.TYPE_CODE_PTR:
             raise TypeError('pointer to struct is needed')
 
@@ -145,7 +201,7 @@ class _Arena(object):
         s.__mask        = 0
         s.__mappings    = mapper
         s.__fence       = []
-        s.__map         = Ring()
+        s.__ring        = ring
 
         s.__sysmem  = int(s.__arena['system_mem'])
         s.__bins = s.__arena['bins']
@@ -177,16 +233,7 @@ class _Arena(object):
         else:
             s.__check_arena_heap()
 
-        s.__mask    = []
-
-        mask    = s.__arena['binmap']
-
-        if mask.type.code != gdb.TYPE_CODE_ARRAY:
-            raise Exception('Invalid unused bins mask type')
-
-        for x in xrange(*mask.type.range()):
-            s.__mask.append(int(mask[x]))
-
+        s.__check_mask()
         s.__check_fasts()
         s.__check_bins()
 
@@ -194,14 +241,17 @@ class _Arena(object):
             s.__log(1, '%i aliases out of wild of arena #%i'
                         %(s.__err_out_of, s.__seq))
 
-        s.__curb_the_wild()
-
-        _dif = s.__sysmem - s.__map.__bytes__()
+        _dif = s.__sysmem - s.__curb_the_wild()
 
         s.__log(1, 'arena #%i has at most of %s unresolved data'
                 % (s.__seq, Humans.bytes(_dif)))
 
-    def __at__(s): return int(s.__arena.cast(addr_t))
+    def __at__(s):  return int(s.__arena.cast(addr_t))
+
+    def __seq__(s): return s.__seq
+
+    def contigous(s):
+        return not (s.__arena['flags'] & _Arena.FL_NON_CONTIGOUS)
 
     def __check_data_segment(s):
         ''' Check primary arena layed out on data segment '''
@@ -212,6 +262,8 @@ class _Arena(object):
 
         s.__log(1, 'data segment starts at 0x%x' % mp.cast(addr_t))
 
+        exten = EHeap(arena = s)
+
         if s.contigous():
             _a1 = int(mp.cast(addr_t)) + s.__sysmem
             _a2 = s.__top.__at__() + len(s.__top)
@@ -219,13 +271,13 @@ class _Arena(object):
             if _a1 != _a2:
                 raise Exception('invalid main arena')
 
-            s.__wild = Span(rg = (int(mp.cast(addr_t)), _a1), exten = Alias())
+            s.__wild = Span(rg = (int(mp.cast(addr_t)), _a1), exten = exten)
 
             s.__log(1, 'main arena has contigous wild at 0x%x %s'
                     % (s.__wild.__rg__()[0], s.__wild.human()))
 
         else:
-            s.__wild = Span(rg = (None, None), exten = Alias())
+            s.__wild = Span(rg = (None, None), exten = exten)
             s.__base_seg = int(mp.cast(addr_t))
 
             s.__log(1, 'arena #%i has a scattered wild' % s.__seq)
@@ -250,10 +302,21 @@ class _Arena(object):
 
         end = min(s.__top.__at__() + len(s.__top), end)
 
-        s.__wild = Span(rg = (low, end), exten = Alias())
+        s.__wild = Span(rg = (low, end), exten = EHeap(arena = s))
 
         s.__log(1, 'Arena #%i has wild at 0x%x %s'
                     % (s.__seq, s.__wild.__rg__()[0], s.__wild.human()))
+
+    def __check_mask(s):
+        s.__mask    = []
+
+        mask    = s.__arena['binmap']
+
+        if mask.type.code != gdb.TYPE_CODE_ARRAY:
+            raise Exception('Invalid unused bins mask type')
+
+        for x in xrange(*mask.type.range()):
+            s.__mask.append(int(mask[x]))
 
     def __check_fasts(s):
         _rg = s.__fasts.type.range()
@@ -328,7 +391,9 @@ class _Arena(object):
 
         s.__log(1, 'collecting fragments for arena #%i' % s.__seq)
 
-        alias = s.__wild.exten(Alias)
+        alias = s.__wild.exten()
+
+        assert alias is not None
 
         alias.push(s.__top.__at__())
 
@@ -346,6 +411,8 @@ class _Arena(object):
         elif s.__wild.ami(Span.I_AM_A_WILD):
             raise AnalysisError('oh my god, it is a wild...')
 
+        was = s.__ring.__bytes__(), len(s.__ring)
+
         while len(s.__fence) > 0:
             a, b = s.__wild.__rg__()[0], s.__fence[0]
 
@@ -359,7 +426,7 @@ class _Arena(object):
 
             if span is None or len(span) == 0: break
 
-            s.__map.push(span)
+            s.__ring.push(span)
 
             if s.__wild.__len__() < 1: break
 
@@ -371,11 +438,15 @@ class _Arena(object):
             else:
                 raise AnalysisError('no alias points before fence')
 
+        discovered = s.__ring.__bytes__() - was[0]
+
         s.__log(1, 'found %s in %i fragments' %
-                    (s.__map.human_bytes(), len(s.__map)))
+                    (Humans.bytes(discovered), len(s.__ring) - was[1]))
 
         if s.__wild.__len__() > 0:
             raise AnalysisError('the wild %s was not exhausted' % s.__wild)
+
+        return discovered
 
     def __traverse_right(s, start, end, at = None):
         ''' Traverse chunks from left to right untill of fence point
@@ -464,75 +535,48 @@ class _Arena(object):
 
             at = childs[0]
 
-    def contigous(s):
-        return not (s.__arena['flags'] & _Arena.FL_NON_CONTIGOUS)
 
-    def lookup(s, at):
-        proximity, rg = s.__map.lookup(at, exact = False)
+class EHeap(Alias):
+    __slots__ = ('_EHeap__arena', '_EHeap__tag')
 
-        if proximity == Ring.MATCH_NEAR:
-            s.__log(1, 'try traverse left rg=' + str(rg))
+    TAG_BOUND   = 1 # Completely known full arena fragment
+    TAG_FRAG    = 2 # Partially known part of arena fragment
+    TAG_LEFT    = 3 # Left guessed continuation of fragment
+    TAG_MMAPPED = 4 # mmap'ed guessed single allocation
+    TAG_SINGLE  = 5 # isolated guessed arena fragment
 
-            s.__traverse_left(rg)
+    __NAMES = {
+            TAG_BOUND:      'bound',
+            TAG_FRAG:       'frag',
+            TAG_LEFT:       'left',
+            TAG_MMAPPED:    'mapped',
+            TAG_SINGLE:     'single' }
 
-            if rg.intersects(at):
-                return s.__lookup_rg(at, rg)
-            else:
-                s.__log(1, 'left traverse gave nothing')
+    def __init__(s, arena = None, tag = None, *kl, **kw):
+        Alias.__init__(s, *kl, **kw)
 
-        elif proximity == Ring.MATCH_EXACT:
-            return s.__lookup_rg(at, rg)
+        s.__tag     = tag or EHeap.TAG_BOUND
+        s.__arena   = arena
 
-        elif  proximity is not None:
-            raise Exception('Unknown proximity=%i' % proximity)
+    def __tag__(s):     return s.__tag
 
-        return (IHeap.REL_OUTOF, None, None, None, None)
+    def __arena__(s):   return s.__arena
 
-    def __lookup_rg(s, at, span):
-        s.__log(8, 'at falls to fragment %s of arena #%i'
-                    % ('[0x%x, 0x%x)' % span.__rg__(), s.__seq))
+    def __desc__(s):
+        tlit    = EHeap.__NAMES.get(s.__tag, '?%u' % s.__tag)
+        alit    = '#%u' % s.__arena.__seq__() if s.__arena else '?'
+        dlit    = Alias.__desc__(s)
 
-        alias = span.exten().lookup(at, alias = Alias.ALIAS_BEFORE)
+        return 'arena %s, %s, %s' % (alit, tlit, dlit)
 
-        s.__log(8, 'alias at 0x%x, distance=%s'
-                    % (alias, Humans.bytes(at - alias)))
+    def __args__(s, rg):
+        kl, kw = Alias.__args__(s, rg)
 
-        for chunk in _Chunk(alias, _Chunk.TYPE_REGULAR):
-            relation, offset = chunk.relation(at)
+        return ((s.__arena, s.__tag) + kl, kw)
 
-            if relation != IHeap.REL_OUTOF:
-                # TODO: lookup fastbin slots and top chunk
-
-                return (relation, chunk.inset(), offset) + chunk.__netto__()
-
-    def enum(s, callback = None, size = None, used = True):
-        ''' Enum given type of objects in arena '''
-
-        if used is True:
-            return s.__enum_used(callback, size)
-
-        elif size is not None:
-            raise Exception('cannot match block size for free list')
-
-        else:
-            return s.__walk_bins()
-
-    def __enum_used(s, callback = None, size = None):
-        ''' Enum given type of objects in arena '''
-
-        if size is not None: size = set(map(_Chunk.round, size))
-
-        for rg in s.__map:
-            start, end = rg.__rg__()
-
-            for chunk in _Chunk(start, _Chunk.TYPE_REGULAR, end = end):
-                if size is not None and len(chunk) not in size:
-                    continue
-
-                if chunk.__at__() == s.__top.__at__():
-                    break
-
-                if chunk.is_used(): yield chunk
+    @classmethod
+    def pred(cls, tag):
+        return lambda span: span.exten().__tag__() == tag
 
 
 class _ErrorChunk(ErrorDamaged):
