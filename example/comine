@@ -1,0 +1,138 @@
+#!/usr/bin/env python2
+
+from sys        import argv, stderr, exit
+from os         import environ, readlink
+from os.path    import abspath, dirname, islink, isfile, isdir
+from getopt     import getopt
+from itertools  import takewhile
+from subprocess import Popen
+
+
+class Prog(object):
+    '''
+        Usage: comine (-p <pid> | -l <path>) [ -u path ] [ -bq ]
+
+        Prepares comine environment for target
+            -p pid      process of target to attach
+            -l path     path to standatd core layout
+
+        Other options:
+            -u path     set directory with custom plugins
+            -b          invoke boot command before target
+            -q          quit just after booting comine
+    '''
+
+    def __init__(s):
+        s.__plugs   = None
+        s.__boot    = False
+        s.__quit    = False
+
+    def do(s):
+        regs = s.__locate(__file__)
+        load = s.__args(argv)
+
+        args = ['gdb', '-ex', 'source %s' % regs]
+
+        if s.__boot is True:
+            args += [ '-ex', 'comine boot']
+
+        if load is not None:
+            args += [ '-ex', 'comine %s' % load]
+
+        if s.__quit is True:
+            args += [ '-ex', 'quit' ]
+
+        Popen(args, env = s.__env_attach()).communicate()
+
+    def __locate(s, self):
+        self = readlink(self) if islink(self) else self
+        regs = abspath(dirname(self) + '/../source/register.py')
+
+        if not isfile(regs):
+            s.__die(1, 'Cannot locate boots file %s' % regs)
+
+        else:
+            return regs
+
+    def __args(s, argv):
+        layout, attach = None, None
+
+        opts, left = getopt(argv[1:], 'l:p:u:bhq')
+
+        if len(left) > 0:
+            s.__die(1, 'Garbadge at the end of args passed')
+
+        for key, val in opts:
+            if key == '-l':
+                layout = val
+
+            elif key == '-p':
+                attach = s.__get_pid_of(val)
+
+            elif key == '-u':
+                s.__plugs = val
+
+                if not isdir(s.__plugs):
+                    s.__die(1, 'path "%s" is not a dir' % s.__plugs)
+
+            elif key == '-b':
+                s.__boot = True
+
+            elif key == '-q':
+                s.__quit = True
+
+            elif key == '-h':
+                s.__help()
+
+        if (layout, attach).count(None) == 0:
+            s.__die(1, 'Cannot pass both -l and -p args')
+
+        elif attach is not None:
+            return 'attach %u' % attach
+
+        elif layout is not None:
+            return 'open %s' % layout
+
+    def __env_attach(s):
+        if s.__plugs:
+            env = environ.copy()
+
+            env['COMINE_PLUGS'] = s.__plugs
+
+            return env
+
+        else:
+            return environ
+
+    def __get_pid_of(s, literal):
+        try:
+            return int(literal)
+
+        except ValueError:
+            s.__die(1, 'Invalid pid literal %s' % literal)
+
+    def __help(s):
+        pref, first = None, True
+
+        lines = s.__class__.__doc__.splitlines()
+
+        for line in filter(lambda x: x.strip(), lines):
+            at = len(list(takewhile(lambda x: x.isspace(), line)))
+
+            pref = min(pref, at) if pref else at
+
+        for line in lines:
+            if not first or line:
+                print line[pref:]
+
+                first = False
+
+        s.__die(0)
+
+    def __die(s, code, msg = None):
+        if msg is not None:
+            stderr.write(msg + '\n')
+
+        exit(code)
+
+if __name__ == '__main__': Prog().do()
