@@ -35,9 +35,11 @@ class TheGlibcHeap(Heap):
         s.__mapper  = mapper
         s.__ready   = False
         s.__ring    = Ring()
-
         s.__arena   = []
+        s.__mp      = frame.read_var('mp_')
+        s.__page    = long(s.__mp['pagesize'])
 
+        s.__log(4, 'heap page size=%ub' % s.__page)
         s.__log(1, "building glibc arena list")
 
         arena = frame.read_var('main_arena')
@@ -68,19 +70,18 @@ class TheGlibcHeap(Heap):
 
         s.__log(1, "heap has %i arena items" % len(s.__arena))
 
-        s.__mp = frame.read_var('mp_')
-
         segment = s.__mp['sbrk_base']
 
         if segment.type.code != gdb.TYPE_CODE_PTR:
             raise Exception('data segment base type invalid')
 
-        s.__examine_mmaps()
         s.__ready = True
 
         mapper.__world__().push(s, s.__ring, provide = 'heap')
 
-        _Guess(log, s.__mapper.__world__(), s.__ring)()
+        _Guess(log, s.__mapper.__world__(), s.__ring, page = s.__page)()
+
+        s.__examine_mmaps()
 
     @classmethod
     def __who__(cls):   return 'glibc'
@@ -117,8 +118,24 @@ class TheGlibcHeap(Heap):
                 % (s.__mmap_th, ['no', 'yes'][s.__mmap_dyn]))
 
         if s.__mmapped or s.__mmaps:
-            s.__log(1, 'heap has %s in %i mmaps() and it is unresolved'
-                % (Humans.bytes(s.__mmapped), s.__mmaps))
+            pred = EHeap.pred(tag = EHeap.TAG_MMAPPED)
+
+            left = s.__mmapped - sum(s.__ring.enum(pred = pred, conv = len))
+
+            if left == 0:
+                status = 'all known'
+
+            elif left == s.__mmapped:
+                status = 'all unknown'
+
+            elif left < 0:
+                status = '%s overdisq' % Humans.bytes(-left)
+
+            else:
+                status = '%s unknown' % Humans.bytes(left)
+
+            s.__log(1, 'heap has %s in %i mmaps(), %s'
+                % (Humans.bytes(s.__mmapped), s.__mmaps, status))
 
     def __arena_by_addr(s, at):
         for arena in s.__arena:
@@ -153,10 +170,16 @@ class TheGlibcHeap(Heap):
         for chunk in _Chunk(alias, _Chunk.TYPE_REGULAR):
             relation, offset = chunk.relation(at)
 
-            if relation != IHeap.REL_OUTOF:
-                # TODO: lookup fastbin slots and top chunk
+            if relation == IHeap.REL_OUTOF:
+                return
 
-                return (relation, chunk.inset(), offset) + chunk.__netto__()
+            elif span.exten().__tag__() == EHeap.TAG_MMAPPED:
+                relation = IHeap.REL_HUGE
+
+            else:
+                pass # TODO: lookup fastbin slots and top chunk
+
+            return (relation, chunk.inset(), offset) + chunk.__netto__()
 
     def __enum_used(s, callback = None, size = None):
         ''' Enum given type of objects in arena '''
@@ -455,13 +478,15 @@ class _Arena(object):
 
 
 class _Guess(object):
-    def __init__(s, log, world, ring):
+    def __init__(s, log, world, ring, page = None):
         s.__log     = log
         s.__world   = world
         s.__ring    = ring
+        s.__page    = page
 
     def __call__(s):
-        it = [ ('left', s.__extend_lefts) ]
+        it = [('left', s.__extend_lefts),
+                ('mmaps', s.__search_mmaped) ]
 
         found = sum(map(lambda x: s.run(*x), it))
 
@@ -569,6 +594,59 @@ class _Guess(object):
                 return at
 
             at = childs[0]
+
+    def __search_mmaped(s):
+        '''
+            Useful hints for mmaped regions search:
+
+            1. For fragments allocated by mmap() in fallback mode exists
+                minimum size and it is equal to 1mb.
+
+            2. The beginning of allocated region by mmap() probably would
+                be aligned by page size, typical is 4kb, recorded in the
+                heap.
+
+            3. Chunks in mmaped regions must be marked as used since its
+                being unmmaped on free() call and isn't collected in any
+                free lists.
+        '''
+
+        with s.__ring.begin(auto = True) as trans:
+            def _push(place):
+                exten = EHeap(tag = EHeap.TAG_MMAPPED)
+
+                trans.make(rg = place, exten = exten)
+
+            for place, spans in s.__world.physical(None, unused = s.__ring):
+                last, thresh = None, place[0]
+
+                for chunk in s.__mmaped_pages(place):
+                    if thresh <= chunk.__at__():
+                        if last is not None: _push(last)
+
+                        last = chunk.__rg__()
+
+                    else:
+                        last = None
+
+                    thresh = max(thresh, (last or (0,thresh))[1])
+
+                if last is not None: _push(last)
+
+    def __mmaped_pages(s, place):
+        _align = lambda x, m = s.__page - 1: (x + m) ^ ((x + m) & m)
+
+        if Tools.len(place) > 64 * 1024:
+            for at in xrange(_align(place[0]), place[1], s.__page):
+                try:
+                    chunk = _Chunk(at, _Chunk.TYPE_REGULAR)
+
+                    if chunk.flag(_Chunk.FL_MMAPPED):
+                        if Tools.inside(place, chunk.__rg__()):
+                            yield chunk
+
+                except _ErrorChunk as E:
+                    pass
 
 
 class EHeap(Alias):
