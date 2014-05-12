@@ -1,4 +1,4 @@
-#__ LGPL 3.0, 2013 Alexander Soloviev (no.friday@yandex.ru)
+#__ LGPL 3.0, 2014 Alexander Soloviev (no.friday@yandex.ru)
 
 import gdb
 
@@ -10,6 +10,7 @@ from comine.maps.errors import MapOutOf
 from comine.maps.ring   import Ring
 from comine.maps.alias  import Alias
 from comine.misc.humans import Humans
+from comine.maps.tools  import Tools
 
 class AnalysisError(Exception):
     ''' Internal error of analytical core, must never happen '''
@@ -79,6 +80,8 @@ class TheGlibcHeap(Heap):
 
         mapper.__world__().push(s, s.__ring, provide = 'heap')
 
+        _Guess(log, s.__mapper.__world__(), s.__ring)()
+
     @classmethod
     def __who__(cls):   return 'glibc'
 
@@ -124,22 +127,8 @@ class TheGlibcHeap(Heap):
     def lookup(s, at):
         proximity, rg = s.__ring.lookup(at, exact = False)
 
-        if proximity == Ring.MATCH_NEAR:
-            if False: # stub, have to be reworked
-                s.__log(1, 'try traverse left rg=' + str(rg))
-
-                s.__traverse_left(rg)
-
-                if rg.intersects(at):
-                    return s.__lookup_rg(at, rg)
-                else:
-                    s.__log(1, 'left traverse gave nothing')
-
-        elif proximity == Ring.MATCH_EXACT:
+        if proximity == Ring.MATCH_EXACT:
             return s.__lookup_rg(at, rg)
-
-        elif  proximity is not None:
-            raise Exception('Unknown proximity=%i' % proximity)
 
         return (IHeap.REL_OUTOF, None, None, None, None)
 
@@ -199,9 +188,11 @@ class _Arena(object):
         s.__primary     = (s.__seq == 0)
         s.__arena       = struct
         s.__mask        = 0
-        s.__mappings    = mapper
+        s.__mapper      = mapper
+        s.__world       = mapper.__world__()
         s.__fence       = []
         s.__ring        = ring
+        s.__bound       = None
 
         s.__sysmem  = int(s.__arena['system_mem'])
         s.__bins = s.__arena['bins']
@@ -241,10 +232,10 @@ class _Arena(object):
             s.__log(1, '%i aliases out of wild of arena #%i'
                         %(s.__err_out_of, s.__seq))
 
-        _dif = s.__sysmem - s.__curb_the_wild()
+        found = _Guess(log, s.__world, ring).run('wild', s.__curb_the_wild)
 
         s.__log(1, 'arena #%i has at most of %s unresolved data'
-                % (s.__seq, Humans.bytes(_dif)))
+                % (s.__seq, Humans.bytes(s.__sysmem - found)))
 
     def __at__(s):  return int(s.__arena.cast(addr_t))
 
@@ -262,8 +253,6 @@ class _Arena(object):
 
         s.__log(1, 'data segment starts at 0x%x' % mp.cast(addr_t))
 
-        exten = EHeap(arena = s)
-
         if s.contigous():
             _a1 = int(mp.cast(addr_t)) + s.__sysmem
             _a2 = s.__top.__at__() + len(s.__top)
@@ -271,12 +260,16 @@ class _Arena(object):
             if _a1 != _a2:
                 raise Exception('invalid main arena')
 
+            exten = EHeap(arena = s, tag = EHeap.TAG_BOUND)
+
             s.__wild = Span(rg = (int(mp.cast(addr_t)), _a1), exten = exten)
 
             s.__log(1, 'main arena has contigous wild at 0x%x %s'
                     % (s.__wild.__rg__()[0], s.__wild.human()))
 
         else:
+            exten = EHeap(arena = s, tag = EHeap.TAG_FRAG)
+
             s.__wild = Span(rg = (None, None), exten = exten)
             s.__base_seg = int(mp.cast(addr_t))
 
@@ -361,10 +354,10 @@ class _Arena(object):
             if s.__bins[x] == s.__bins[x+1]: continue
 
             if validate is not False:
-                if not s.__mappings.validate(s.__bins[x].cast(addr_t)):
+                if not s.__mapper.validate(s.__bins[x].cast(addr_t)):
                     raise Exception('invalid bin list head')
 
-                if not s.__mappings.validate(s.__bins[x+1].cast(addr_t)):
+                if not s.__mapper.validate(s.__bins[x+1].cast(addr_t)):
                     raise Exception('invalid bin list head')
 
             first = _Chunk(s.__bins[x], _Chunk.TYPE_BIN, _arena = s,
@@ -391,27 +384,7 @@ class _Arena(object):
 
         s.__log(1, 'collecting fragments for arena #%i' % s.__seq)
 
-        alias = s.__wild.exten()
-
-        assert alias is not None
-
-        alias.push(s.__top.__at__())
-
-        s.__fence.append(s.__top.__at__() + len(s.__top))
-        s.__fence.sort()
-
-        s.__log(1, 'found %i fence points for arena #%i'
-                            % (len(s.__fence), s.__seq))
-
-        if s.__wild.ami(Span.I_AM_THE_BEAST):
-            alias.push(s.__base_seg)
-
-            s.__wild.extend(rg = alias.catch(hint = s.__fence[-1]))
-
-        elif s.__wild.ami(Span.I_AM_A_WILD):
-            raise AnalysisError('oh my god, it is a wild...')
-
-        was = s.__ring.__bytes__(), len(s.__ring)
+        alias = s.__catch_the_wild()
 
         while len(s.__fence) > 0:
             a, b = s.__wild.__rg__()[0], s.__fence[0]
@@ -438,15 +411,31 @@ class _Arena(object):
             else:
                 raise AnalysisError('no alias points before fence')
 
-        discovered = s.__ring.__bytes__() - was[0]
-
-        s.__log(1, 'found %s in %i fragments' %
-                    (Humans.bytes(discovered), len(s.__ring) - was[1]))
-
         if s.__wild.__len__() > 0:
             raise AnalysisError('the wild %s was not exhausted' % s.__wild)
 
-        return discovered
+    def __catch_the_wild(s):
+        alias = s.__wild.exten()
+
+        assert alias is not None
+
+        alias.push(s.__top.__at__())
+
+        s.__fence.append(s.__top.__at__() + len(s.__top))
+        s.__fence.sort()
+
+        s.__log(1, 'found %i fence points for arena #%i'
+                            % (len(s.__fence), s.__seq))
+
+        if s.__wild.ami(Span.I_AM_THE_BEAST):
+            alias.push(s.__base_seg)
+
+            s.__wild.extend(rg = alias.catch(hint = s.__fence[-1]))
+
+        elif s.__wild.ami(Span.I_AM_A_WILD):
+            raise AnalysisError('oh my god, it is a wild...')
+
+        return alias
 
     def __traverse_right(s, start, end, at = None):
         ''' Traverse chunks from left to right untill of fence point
@@ -464,8 +453,64 @@ class _Arena(object):
         else:
             return (None, None, chunk)
 
-    def __traverse_left(s, rg, at = None):
-        ''' Try to resolve range at left from an alias point. There is
+
+class _Guess(object):
+    def __init__(s, log, world, ring):
+        s.__log     = log
+        s.__world   = world
+        s.__ring    = ring
+
+    def __call__(s):
+        it = [ ('left', s.__extend_lefts) ]
+
+        found = sum(map(lambda x: s.run(*x), it))
+
+    def run(s, name, call):
+        change = s.__ring.measure(call)
+
+        s.__log(1, 'found %s in %i frags while %s disq' %
+                (Humans.bytes(change[1]), change[0], name))
+
+        return change[1]
+
+    def __extend_lefts(s):
+        '''
+            Invoke left traverse procedure for each known heap block that
+            is known not to be closed on left side. This code has any sense
+            only for primary arena that my be not a contigous.
+        '''
+
+        if len(s.__ring) > 0: s.__extend_left_do()
+
+    def __extend_left_do(s):
+        def _extend(span):
+            place = s.__ring.wider(span.__rg__()[0]-1)
+
+            if place is not None:
+                for rg, spans in s.__world.physical(place):
+                    if rg[1] == place[1]: return rg, spans
+
+            return None, None
+
+        s.__log(8, 'try to left extends on %s' % Tools.str(s.__ring.bound()))
+
+        with s.__ring.begin(auto = True) as trans:
+            for span in s.__ring.enum(pred = EHeap.pred(EHeap.TAG_FRAG)):
+                left, spans = _extend(span)
+
+                if left is not None:
+                    new = s.__traverse_left(rg = left)
+
+                    if new is not None:
+                        arena = span.exten().__arena__()
+
+                        exten = EHeap(arena, tag = EHeap.TAG_LEFT)
+
+                        trans.make(rg = new, exten = exten)
+
+    def __traverse_left(s, rg):
+        '''
+            Try to resolve range at left from an alias point. There is
             no way to traverse exactly chunks from right to left. Some
             heruistic logic must be used here to find candidates for
             left continuations. This hints may be useful:
@@ -473,28 +518,19 @@ class _Arena(object):
             1. All chunks are aligned to _Chunk.OFFSET value - two
                 pointers, thus 0x3 for 32bit space and 0x7 for x86_64.
 
-            2. For fragments allocated by mmap() in fallback mode exists
-                minimum size and it is equal to 1mb.
-
-            3. The beginning of allocated region by mmap() probably would
-                be aligned by page size, typical is 4kb, recorded in the
-                heap.
-
-            4. Chunks in left continuation all must be marked used as
+            2. Chunks in left continuation all must be marked used as
                 all free chunks are known from bin lists and it is
                 already accounted as heap known regions.
 
-            5. Only chunks of primary arena may be founded in continuations
+            3. Only chunks of primary arena may be founded in continuations
                 since all secondary arenas is contigous and w/o any holes.
         '''
 
-        last    = rg.__rg__()[0]
-        nodes   = { last: [] }
-        end     = rg.__rg__()[0] - 1024 * 1024
+        last, nodes = rg[1], { rg[1]: [] }
 
         fmask = _Chunk.FL_MMAPPED | _Chunk.FL_NON_MAIN_ARENA
 
-        for caret in _Chunk(rg.__rg__()[0], _Chunk.TYPE_LEFT, end = end):
+        for caret in _Chunk(rg[1], _Chunk.TYPE_LEFT, end = rg[0]):
             probe = caret.__at__()
 
             if last - probe > 1024*1024: break
@@ -511,10 +547,9 @@ class _Arena(object):
                 nodes[probe] = []
                 last = probe
 
-        left = s.__resolve_left(rg.__rg__()[0], nodes)
+        left = s.__resolve_left(rg[1], nodes)
 
-        if left < rg.__rg__()[0]:
-            rg.extend(where = -1, to = left, tag = Span.TAG_MOST)
+        return (left, rg[1] )if left < rg[1] else None
 
     def __resolve_left(s, at, nodes):
         ''' Analyse tree build while left traverse and give estimated
