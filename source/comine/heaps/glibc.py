@@ -732,6 +732,9 @@ class _Chunk(object):
     def __validate__(s, fence = False):
         _min = _Chunk.FENCE_SIZE if fence else _Chunk.MIN_SIZE
 
+        if _Chunk.csize(s.__chunk) < 0:
+            raise _ErrorChunk(s, 'fucking gdb cannot convert size_t')
+
         if _Chunk.csize(s.__chunk) < _min:
             raise _ErrorChunk(s, 'Invalid chunk size %ib, min=%ib'
                                     % (len(s), _min))
@@ -812,7 +815,9 @@ class _Chunk(object):
 
             return inf.read_memory(s.__at__() + _Chunk.OFFSET, size)
 
-    def __at__(s): return int(s.__chunk.cast(addr_t))
+    def __at__(s):  return long(s.__chunk.cast(addr_t))
+
+    def __rg__(s):  return (s.__at__(), s.__at__() + len(s))
 
     def inset(s):   return s.__at__() + _Chunk.OFFSET
 
@@ -915,7 +920,7 @@ class _Chunk(object):
     def csize(cls, chunk):
         ''' Get brutto chunk size from passed chunk object '''
 
-        a = int(chunk['size'].cast(size_t))
+        a = long(chunk['size'].cast(size_t))
 
         return long(a ^ (a & 0x07))
 
