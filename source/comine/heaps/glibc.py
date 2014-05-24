@@ -37,7 +37,7 @@ class TheGlibcHeap(Heap):
         s.__ring    = Ring()
         s.__arena   = []
         s.__mp      = frame.read_var('mp_')
-        s.__page    = long(s.__mp['pagesize'])
+        s.__page    = s.__disq_page_size()
 
         s.__log(4, 'heap page size=%ub' % s.__page)
         s.__log(1, "building glibc arena list")
@@ -87,6 +87,23 @@ class TheGlibcHeap(Heap):
     def __who__(cls):   return 'glibc'
 
     def __ready__(s):   return s.__ready
+
+    def __disq_page_size(s):
+        _pre_2_17 = lambda : s.__mp['pagesize']
+
+        def _post_2_17():
+            frame = gdb.selected_frame()
+
+            return frame.read_var('_rtld_global_ro')['_dl_pagesize']
+
+        for hope in (_pre_2_17, _post_2_17):
+            try:
+                return long(hope())
+
+            except Exception as E:
+                pass
+
+        raise Exception('Cannot discover page size')
 
     def __try_to_add_arena(s, _arena):
         try:
