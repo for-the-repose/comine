@@ -10,6 +10,7 @@ from comine.maps.errors import MapOutOf
 from comine.maps.ring   import Ring
 from comine.maps.alias  import Alias
 from comine.misc.humans import Humans
+from comine.misc.types  import Types, Frozen
 from comine.maps.tools  import Tools
 
 class AnalysisError(Exception):
@@ -37,9 +38,9 @@ class TheGlibcHeap(Heap):
         s.__ring    = Ring()
         s.__arena   = []
         s.__mp      = frame.read_var('mp_')
-        s.__page    = s.__disq_page_size()
+        s.__sc      = _Scale(page = s.__disq_page_size())
 
-        s.__log(4, 'heap page size=%ub' % s.__page)
+        s.__log(4, 'heap page size=%ub' % s.__sc.__page__())
         s.__log(1, "building glibc arena list")
 
         arena = frame.read_var('main_arena')
@@ -51,22 +52,7 @@ class TheGlibcHeap(Heap):
 
         arena = gdb.Value(arena.address).cast(arena_t)
 
-        s.__log(1, 'primary arena at 0x%x found' % arena.cast(addr_t))
-
-        s.__arena.append(s.__make_arena(arena, 0))
-
-        while True:
-            arena = arena['next']
-
-            if not s.__mapper.validate(arena.cast(addr_t)):
-                raise Exception('Invalid arena links')
-
-            if s.__arena_by_addr(arena.cast(addr_t)): break
-
-            s.__log(1, 'secondary arena #%i at 0x%x found'
-                        % (len(s.__arena), arena.cast(addr_t)))
-
-            s.__try_to_add_arena(arena)
+        while s.__try_to_add_arena(arena): arena = arena['next']
 
         s.__log(1, "heap has %i arena items" % len(s.__arena))
 
@@ -79,7 +65,7 @@ class TheGlibcHeap(Heap):
 
         mapper.__world__().push(s, s.__ring, provide = 'heap')
 
-        _Guess(log, s.__mapper.__world__(), s.__ring, page = s.__page)()
+        _Guess(log, s.__mapper.__world__(), s.__ring, sc = s.__sc)()
 
         s.__examine_mmaps()
 
@@ -106,18 +92,31 @@ class TheGlibcHeap(Heap):
         raise Exception('Cannot discover page size')
 
     def __try_to_add_arena(s, _arena):
-        try:
-            arena = s.__make_arena(_arena, len(s.__arena))
+        at, seq = long(_arena.cast(addr_t)), len(s.__arena)
 
-        except ErrorDamaged as E:
-            s.__log(1, 'cannot add arena at 0x%x, error %s'
-                        % (int(_arena.cast(addr_t)),  str(E)))
+        if seq == 0:
+            s.__log(1, 'primary arena entry at 0x%x' % at)
 
-        else:
-            s.__arena.append(arena)
+        if not s.__arena_by_addr(at):
+            if not s.__mapper.validate(at):
+                raise Exception('Arena ptr refers to nowhere')
+
+            try:
+                arena = s.__make_arena(_arena, seq)
+
+            except ErrorDamaged as E:
+                s.__log(1, 'cannot add arena at 0x%x, error %s' % (at, E))
+
+            else:
+                s.__arena.append(arena)
+
+                s.__log(1, 'arena #%i at 0x%x discovered'
+                            % (arena.__seq__(), arena.__at__()))
+
+                return True
 
     def __make_arena(s, _arena, seq):
-        return _Arena(_arena, seq, s.__ring, s.__log, s.__mapper)
+        return _Arena(s.__sc, _arena, seq, s.__ring, s.__log, s.__mapper)
 
     def __examine_mmaps(s):
         ''' Analyse mmap() settings for the heap.
@@ -156,7 +155,7 @@ class TheGlibcHeap(Heap):
 
     def __arena_by_addr(s, at):
         for arena in s.__arena:
-            if int(arena.__at__()) == int(at): return arena
+            if long(arena.__at__()) == long(at): return arena
 
     def lookup(s, at):
         proximity, rg = s.__ring.lookup(at, exact = False)
@@ -184,7 +183,7 @@ class TheGlibcHeap(Heap):
         s.__log(8, 'alias at 0x%x, distance=%s'
                     % (alias, Humans.bytes(at - alias)))
 
-        for chunk in _Chunk(alias, _Chunk.TYPE_REGULAR):
+        for chunk in _Chunk(s.__sc, alias, _Chunk.TYPE_REGULAR):
             relation, offset = chunk.relation(at)
 
             if relation == IHeap.REL_OUTOF:
@@ -201,12 +200,14 @@ class TheGlibcHeap(Heap):
     def __enum_used(s, callback = None, size = None):
         ''' Enum given type of objects in arena '''
 
-        if size is not None: size = set(map(_Chunk.round, size))
+        if size is not None: size = set(map(s.__sc.round, size))
 
         for span in s.__ring:
             start, end = span.__rg__()
 
-            for chunk in _Chunk(start, _Chunk.TYPE_REGULAR, end = end):
+            it = _Chunk(s.__sc, start, _Chunk.TYPE_REGULAR, end = end)
+
+            for chunk in it:
                 if size is not None and len(chunk) not in size:
                     continue
 
@@ -219,7 +220,7 @@ class TheGlibcHeap(Heap):
 class _Arena(object):
     FL_NON_CONTIGOUS    = 0x02
 
-    def __init__(s, struct, seq, ring, log, mapper):
+    def __init__(s, sc, struct, seq, ring, log, mapper):
         if struct.type.code != gdb.TYPE_CODE_PTR:
             raise TypeError('pointer to struct is needed')
 
@@ -233,6 +234,7 @@ class _Arena(object):
         s.__fence       = []
         s.__ring        = ring
         s.__bound       = None
+        s.__sc          = Types.ensure(sc, _Scale)
 
         s.__sysmem  = int(s.__arena['system_mem'])
         s.__bins = s.__arena['bins']
@@ -249,7 +251,7 @@ class _Arena(object):
 
         s.__remainders = s.__arena['last_remainder']
 
-        s.__top = _Chunk(s.__arena['top'], _Chunk.TYPE_REGULAR)
+        s.__top = _Chunk(s.__sc, s.__arena['top'], _Chunk.TYPE_REGULAR)
 
 #       if s.__top.type.code != gdb.TYPE_CODE_PTR:
 #           raise Exception('Invalid top chunk member')
@@ -327,7 +329,7 @@ class _Arena(object):
                 'invalid heap #%i arena ref=0x%x'
                         % (s.__seq, int(heap['ar_ptr'])))
 
-        low = _Chunk.align((s.__arena + 1).cast(addr_t))
+        low = s.__sc.align((s.__arena + 1).cast(addr_t))
         end = int(heap.cast(addr_t)) + heap['size']
 
         if not (low <= s.__top.__at__() < end):
@@ -359,7 +361,7 @@ class _Arena(object):
         for x in xrange(*_rg):
             if s.__fasts[x] == 0x0: continue
 
-            first = _Chunk(s.__fasts[x], _Chunk.TYPE_FAST, _arena = s)
+            first = _Chunk(s.__sc, s.__fasts[x], _Chunk.TYPE_FAST, _arena = s)
 
             for chunk in first:
                 s.__push_alias_to_wild(chunk.__at__())
@@ -400,7 +402,7 @@ class _Arena(object):
                 if not s.__mapper.validate(s.__bins[x+1].cast(addr_t)):
                     raise Exception('invalid bin list head')
 
-            first = _Chunk(s.__bins[x], _Chunk.TYPE_BIN, _arena = s,
+            first = _Chunk(s.__sc, s.__bins[x], _Chunk.TYPE_BIN, _arena = s,
                             end = s.__bins[x+1], queue = x>>1)
 
             for chunk in first: yield chunk
@@ -484,7 +486,7 @@ class _Arena(object):
             to and relation of at in this chunk returned.
         '''
 
-        for chunk in _Chunk(start, _Chunk.TYPE_REGULAR, end = end):
+        for chunk in _Chunk(s.__sc, start, _Chunk.TYPE_REGULAR, end = end):
             if at is not None:
                 relation, offset = chunk.relation(at)
 
@@ -495,11 +497,11 @@ class _Arena(object):
 
 
 class _Guess(object):
-    def __init__(s, log, world, ring, page = None):
+    def __init__(s, log, world, ring, sc = None):
         s.__log     = log
         s.__world   = world
-        s.__ring    = ring
-        s.__page    = page
+        s.__ring    = Types.ensure(ring, Ring)
+        s.__sc      = Types.ensure(sc, _Scale, True)
 
     def __call__(s):
         it = [('left', s.__extend_lefts),
@@ -557,8 +559,8 @@ class _Guess(object):
             heruistic logic must be used here to find candidates for
             left continuations. This hints may be useful:
 
-            1. All chunks are aligned to _Chunk.OFFSET value - two
-                pointers, thus 0x3 for 32bit space and 0x7 for x86_64.
+            1. All chunks are aligned to two _Scale.__atom__() bytes,
+                thus align mask is 0x3 for 32bit space and 0x7 for x86_64.
 
             2. Chunks in left continuation all must be marked used as
                 all free chunks are known from bin lists and it is
@@ -572,7 +574,7 @@ class _Guess(object):
 
         fmask = _Chunk.FL_MMAPPED | _Chunk.FL_NON_MAIN_ARENA
 
-        for caret in _Chunk(rg[1], _Chunk.TYPE_LEFT, end = rg[0]):
+        for caret in _Chunk(s.__sc, rg[1], _Chunk.TYPE_LEFT, end = rg[0]):
             probe = caret.__at__()
 
             if last - probe > 1024*1024: break
@@ -651,12 +653,14 @@ class _Guess(object):
                 if last is not None: _push(last)
 
     def __mmaped_pages(s, place):
-        _align = lambda x, m = s.__page - 1: (x + m) ^ ((x + m) & m)
+        page = s.__sc.__page__()
+
+        _align = lambda x, m = page - 1: (x + m) ^ ((x + m) & m)
 
         if Tools.len(place) > 64 * 1024:
-            for at in xrange(_align(place[0]), place[1], s.__page):
+            for at in xrange(_align(place[0]), place[1], page):
                 try:
-                    chunk = _Chunk(at, _Chunk.TYPE_REGULAR)
+                    chunk = _Chunk(s.__sc, at, _Chunk.TYPE_REGULAR)
 
                     if chunk.flag(_Chunk.FL_MMAPPED):
                         if Tools.inside(place, chunk.__rg__()):
@@ -719,8 +723,6 @@ class _ErrorChunk(ErrorDamaged):
 
 
 class _Chunk(object):
-    type_t  = None
-
     FL_PREV_IN_USE      = 0x1
     FL_MMAPPED          = 0x2
     FL_NON_MAIN_ARENA   = 0x4
@@ -735,29 +737,19 @@ class _Chunk(object):
 
     _TYPE_BINS = (TYPE_BIN, TYPE_FAST)
 
-    # TODO: implement smart calculation, as offset of fd_nextsize
-    MIN_SIZE    = int(size_t.sizeof * 4)
-    FENCE_SIZE  = int(size_t.sizeof * 2)
-    OFFSET      = int(size_t.sizeof * 2)
-    ALIGN       = int(size_t.sizeof * 2)
-    BRUTT       = int(size_t.sizeof * 1)
-    MINETT      = MIN_SIZE - BRUTT
-
-    __attrs = ('type', 'chunk', 'end', 'queue', 'first', 'arena')
+    __attrs = ('sc', 'type', 'chunk', 'end', 'queue', 'first', 'arena')
 
     __slots__ = tuple(map(lambda x: '_Chunk__' + x, __attrs))
 
-    def __init__(s, raw, kind_of = None, end = None, queue = None,
-                            _arena = None):
+    def __init__(s, me, raw, kind_of = None, end = None,
+                        queue = None, _arena = None):
         if raw == 0x0: raise ValueError('invalid address')
 
-        s.__locate_type()
-
+        s.__sc      = Types.ensure(me, _Scale)
         s.__type    = kind_of or _Chunk.TYPE_REGULAR
 
         if s.__type == _Chunk.TYPE_ALLOCATED:
-            raw = (raw.cast(ptr_t) - _Chunk.OFFSET).cast(type_t)
-
+            raw     = s.__sc.begin(raw)
             kind_of = _Chunk.TYPE_REGULAR
 
             raise Exception('Not ready yet')
@@ -767,8 +759,8 @@ class _Chunk(object):
 
         raw, end = map(_cast, [raw, end])
 
-        s.__chunk   = raw.cast(_Chunk.type_t)
-        s.__end     = end and end.cast(addr_t)
+        s.__chunk   = raw.cast(s.__sc.type_t)
+        s.__end     = end and s.__sc.at(end)
         s.__queue   = queue and int(queue)
         s.__first   = False
         s.__arena   = _arena
@@ -778,15 +770,10 @@ class _Chunk(object):
 
         s.__validate__()
 
-    def __locate_type(s):
-        if _Chunk.type_t is None:
-            _Chunk.type_t = gdb.lookup_type('struct malloc_chunk')
-            _Chunk.type_t = _Chunk.type_t.pointer()
-
     def meta(s):
         ''' Return metadata about of this chunk: (body, size, used) '''
 
-        offset = _Chunk.OFFSET
+        offset = s.__sc.OFFSET
 
         return (s.__at__() + offset, len(s) - offset, s.is_used())
 
@@ -796,7 +783,7 @@ class _Chunk(object):
         return (caret.flag(_Chunk.FL_PREV_IN_USE) != 0)
 
     def clone(s, kind_of):
-        return _Chunk(s.__chunk, kind_of, _arena = s.__arena)
+        return _Chunk(s.__sc, s.__chunk, kind_of, _arena = s.__arena)
 
     def flag(s, flag): return s.__chunk['size'] & (flag & 0x7)
 
@@ -814,25 +801,20 @@ class _Chunk(object):
         if not (0 <= a < len(s)):
             return (IHeap.REL_OUTOF, a)
 
-        elif a < _Chunk.OFFSET:
-            return (IHeap.REL_HEAD, a - _Chunk.OFFSET)
+        elif a < s.__sc.OFFSET:
+            return (IHeap.REL_HEAD, a - s.__sc.OFFSET)
 
         else:
-            return (IHeap.REL_CHUNK, a - _Chunk.OFFSET)
+            return (IHeap.REL_CHUNK, a - s.__sc.OFFSET)
 
     def __repr__(s):
         return '<_Chunk at 0x%x, %x %ub ~%u>' \
-                    % ((s.__chunk.cast(addr_t), s.flag(0x7)) + s.__netto__())
+                    % ((s.__sc.at(s.__chunk),
+                            s.flag(0x7)) + s.__netto__())
 
     def __validate__(s, fence = False):
-        _min = _Chunk.FENCE_SIZE if fence else _Chunk.MIN_SIZE
-
-        if _Chunk.csize(s.__chunk) < 0:
-            raise _ErrorChunk(s, 'fucking gdb cannot convert size_t')
-
-        if _Chunk.csize(s.__chunk) < _min:
-            raise _ErrorChunk(s, 'Invalid chunk size %ib, min=%ib'
-                                    % (len(s), _min))
+        if not s.__sc.fits(s.__chunk, fence):
+            raise _ErrorChunk(s, 'Invalid chunk size %ib' % len(s))
 
         if s.__type == _Chunk.TYPE_REGULAR: s.__validate_regular()
         elif s.__type == _Chunk.TYPE_TOP:   s.__validate_top()
@@ -866,7 +848,7 @@ class _Chunk(object):
             if caret.flag(_Chunk.FL_PREV_IN_USE):
                 raise Exception('Invalid bin chunk')
 
-            if caret.prev() != _Chunk.csize(s.__chunk):
+            if caret.prev() != s.__sc.csize(s.__chunk):
                 raise Exception('Invalid bin cunk')
 
             try:
@@ -887,7 +869,7 @@ class _Chunk(object):
             special restrictions to its size are applied
         '''
 
-        if _Chunk.csize(s.__chunk) >= 512:
+        if s.__sc.csize(s.__chunk) >= 512:
             raise Exception('Invalid size %i of fastbin chunk' % len(s))
 
         caret = s.clone(_Chunk.TYPE_REGULAR).__next__()
@@ -898,30 +880,25 @@ class _Chunk(object):
     def __blob__(s, gdbval = False):
         ''' Return blob that holds this chunk or char pointer '''
 
-        size = _Chunk.netto(s.__chunk)
+        size = s.__sc.netto(s.__chunk)[0]
 
         if gdbval is True:
-            ptr = s.__chunk.cast(ptr_t) + _Chunk.OFFSET
-
-            return (size, ptr)
+            return (size, s.__sc.inset(s.__chunk))
 
         else:
             inf = gdb.selected_inferior()
 
-            return inf.read_memory(s.__at__() + _Chunk.OFFSET, size)
+            return inf.read_memory(s.__at__() + s.__sc.OFFSET, size)
 
-    def __at__(s):  return long(s.__chunk.cast(addr_t))
+    def __at__(s):      return s.__sc.at(s.__chunk)
 
-    def __rg__(s):  return (s.__at__(), s.__at__() + len(s))
+    def __rg__(s):      return (s.__at__(), s.__at__() + len(s))
 
-    def inset(s):   return s.__at__() + _Chunk.OFFSET
+    def inset(s):       return s.__at__() + s.__sc.OFFSET
 
-    def __len__(s): return _Chunk.csize(s.__chunk)
+    def __len__(s):     return s.__sc.csize(s.__chunk)
 
-    def __netto__(s):
-        size, gran = _Chunk.netto(s.__chunk), _Chunk.ALIGN
-
-        return (size, gran if size > _Chunk.MINETT else _Chunk.MINETT)
+    def __netto__(s):   return s.__sc.netto(s.__chunk)
 
     def __eq__(s, chunk):
         if isinstance(chunk, _Chunk):
@@ -945,30 +922,27 @@ class _Chunk(object):
             return s
 
         elif s.__type == _Chunk.TYPE_REGULAR:
-            _p = s.__chunk.cast(ptr_t) + _Chunk.csize(s.__chunk)
+            _p = s.__sc.next(s.__chunk)
+            caret = _p.cast(s.__sc.type_t)
 
-            caret = _p.cast(_Chunk.type_t)
-
-            if s.__end and _p.cast(addr_t) >= s.__end:
+            if s.__end and s.__sc.at(_p) >= s.__end:
                 s.__chunk = caret
 
                 raise StopIteration('terminal chunk is reached')
 
-            if _Chunk.csize(caret) == _Chunk.FENCE_SIZE \
-                    and _Chunk.csize(s.__chunk) == _Chunk.FENCE_SIZE \
-                    and (caret['size'] & _Chunk.FL_PREV_IN_USE):
+            if s.__sc.fence(s.__chunk) and s.__sc.fence(caret, True):
                 raise StopIteration('fencepoint reached')
 
         elif s.__type == _Chunk.TYPE_BIN:
             caret = s.__chunk['fd']
 
-            if caret.cast(addr_t) == s.__end:
+            if s.__sc.at(caret) == s.__end:
                 raise StopIteration()
 
             if caret['bk'] != s.__chunk:
                 raise Exception('Invalid bin chunk linkage')
 
-#           if s.__queue and caret['size'] < _Chunk.csize(s.__chunk):
+#           if s.__queue and caret['size'] < s.__sc.csize(s.__chunk):
 #               raise Exception('bin is not sorted by size')
 
         elif s.__type == _Chunk.TYPE_FAST:
@@ -977,10 +951,10 @@ class _Chunk(object):
             if caret == 0x0:
                 raise StopIteration()
 
-            if s.__end and careet.cast(addr_t) == s.__end:
+            if s.__end and s.__sc.at(caret) == s.__end:
                 raise StopIteration()
 
-            if _Chunk.csize(caret) != len(s):
+            if s.__sc.csize(caret) != len(s):
                 raise Exception('Invalid fastbin chunk size')
 
         elif s.__type == _Chunk.TYPE_TOP:
@@ -988,15 +962,15 @@ class _Chunk(object):
 
         elif s.__type == _Chunk.TYPE_LEFT:
             caret = s.__chunk
-            ptr = s.__chunk.cast(ptr_t)
+            ptr = s.__chunk.cast(s.__sc.ptr_t)
 
             while True:
                 if ptr <= s.__end: raise StopIteration()
 
-                ptr -= _Chunk.OFFSET
-                caret = ptr.cast(_Chunk.type_t)
+                ptr -= s.__sc.OFFSET
+                caret = ptr.cast(s.__sc.type_t)
 
-                if _Chunk.csize(caret) >= _Chunk.MIN_SIZE:
+                if s.__sc.fits(caret):
                     break
 
         else:
@@ -1009,38 +983,102 @@ class _Chunk(object):
 
     next = __next__
 
-    def is_gap(s): return len(s) == _Chunk.FENCE_SIZE
+    def is_gap(s): return s.__sc.fence(s.__chunk)
 
-    @classmethod
-    def csize(cls, chunk):
-        ''' Get brutto chunk size from passed chunk object '''
 
-        a = long(chunk['size'].cast(size_t))
+class _Scale(Frozen):
+    def __init__(s, page):
+        s.__page    = page
 
-        return long(a ^ (a & 0x07))
+        s.type_t = gdb.lookup_type('struct malloc_chunk').pointer()
 
-    @classmethod
-    def netto(cls, chunk):
-        ''' Return potential usefu payload for chunk '''
+        s.ptr_t     = ptr_t
+        s.__addr_t  = addr_t
+        s.__size_t  = size_t
 
-        return _Chunk.csize(chunk) - _Chunk.BRUTT
+        s.__atom    = int(s.__size_t.sizeof)
 
-    @classmethod
-    def round(cls, size, brutto = True):
-        ''' Round size to chunk size as it would allocated by heap '''
+        assert s.__page > 4 * s.__atom
 
-        size = _Chunk.align(max(size + _Chunk.BRUTT, _Chunk.MIN_SIZE))
+        s.__MIN     = s.__atom * 4
+        s.__FENCE   = s.__atom * 2
+        s.OFFSET    = s.__atom * 2
+        s.__ALIGN   = s.__atom * 2
+        s.__BRUTT   = s.__atom * 1
+        s.__MINETT  = s.__MIN - s.__BRUTT
 
-        return size if brutto is True else (size - _Chunk.BRUTT)
+        s.__mask    = s.__ALIGN - 1
 
-    @classmethod
-    def align(cls, size):
-        ''' Align size to chunk grid, round up to 2 * size_t '''
-
-        mask = _Chunk.ALIGN-1
-        size = int(size)
-
-        if mask & (mask + 1):
+        if s.__mask & (s.__mask + 1):
             raise Exception('invalid align mask=0x%x' % mask)
 
-        return (size + mask) ^ ((size + mask) & mask)
+        Frozen.__init__(s)
+
+    def __page__(s):    return s.__page
+
+    def __atom__(s):    return s.__atom
+
+    def __str__(s):
+        return 'Metrics(%u, page=%u)' % (s.__atom, s.__page)
+
+    def at(s, chunk):
+        ''' Convert chunk pointer to pythonic long object '''
+
+        return long(chunk.cast(s.__addr_t))
+
+    def begin(s, at):
+        ''' Return chunk pointer by its first allocated byte '''
+
+        return (at.cast(s.ptr_t) - s.OFFSET).cast(s.type_t)
+
+    def inset(s, chunk):
+        ''' Return pointer to first chunk interior byte '''
+
+        return chunk.cast(s.ptr_t) + s.OFFSET
+
+    def next(s, chunk):
+        ''' Return pointer to next chunk following supplied '''
+
+        return chunk.cast(s.ptr_t) + s.csize(chunk)
+
+    def csize(s, chunk):
+        ''' Get brutto chunk size from passed chunk object '''
+
+        a = long(chunk['size'].cast(s.__size_t))
+
+        return a ^ (a & 0x07)
+
+    def fence(s, chunk, last = False):
+        size = long(chunk['size'].cast(s.__size_t))
+
+        return (long(size ^ (size & 0x07)) == s.__FENCE
+                    and (not last or size & _Chunk.FL_PREV_IN_USE))
+
+    def fits(s, chunk, fence = False):
+        ''' Returns True if chunk size fits to minimal len '''
+
+        size = s.csize(chunk)
+
+        if size < 0:
+            raise _ErrorChunk(s, 'stupid gdb cannot convert size_t')
+
+        return size >= (s.__FENCE if fence else s.__MIN)
+
+    def netto(s, chunk):    # -> (size, granularity)
+        size = s.csize(chunk) - s.__BRUTT
+
+        return (size, s.__ALIGN if size > s.__MINETT else s.__MINETT)
+
+    def round(s, size, brutto = True):
+        ''' Round size to chunk size as it would allocated by heap '''
+
+        size = s.align(max(size + s.__BRUTT, s.__MIN))
+
+        return size if brutto is True else (size - s.__BRUTT)
+
+    def align(s, size):
+        ''' Align size to chunk grid, round up to 2 * size_t '''
+
+        size = int(size)
+
+        return (size + s.__mask) ^ ((size + s.__mask) & s.__mask)
