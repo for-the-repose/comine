@@ -4,14 +4,14 @@ from re     import match
 
 import gdb
 
-from comine.core.libc   import addr_t
+from comine.core.libc   import LibC
 from comine.core.logger import log
 from comine.core.world  import World
 from comine.core.base   import Core, Memory, Mappings
 from comine.core.exun   import Exuns
 from comine.misc.types  import Singleton
 from comine.misc.humans import Humans
-
+from comine.gdb.tools   import Tools
 
 class Mapper(object):
     ''' Memory region mappings table registery '''
@@ -25,10 +25,11 @@ class Mapper(object):
 
     def __init__(s):
         s.__mode        = None
+        s.__gin         = gdb.selected_inferior()
+        s.__tools       = Tools(gin = s.__gin)
+        s.__world       = World()
         s.__attached    = False
-
-        s.__infer   = gdb.selected_inferior()
-        s.__world   = World()
+        s.__world       = World()
 
         log(1, 'collecting memory in world...')
 
@@ -40,14 +41,19 @@ class Mapper(object):
         s.__discover_mode()
 
         if s.__mode in (Mapper.MODE_LIVE, Mapper.MODE_VOLATILE):
-            s.__maps.use_pid(s.__infer.pid)
+            s.__maps.use_pid(s.__gin.pid)
 
             s.__memory = Memory(s)
 
+        s.__libc    = LibC(s.__tools)
+        s.__addr_t  = s.__libc.std_type('addr_t')
+
     def __world__(s):   return s.__world
 
+    def __libc__(s):    return s.__libc
+
     def search_memory(s, *kl, **kw):
-        return s.__infer.search_memory(*kl, **kw)
+        return s.__gin.search_memory(*kl, **kw)
 
     def register(s, *kl, **kw):
         s.__world.push(*kl, **kw)
@@ -83,9 +89,9 @@ class Mapper(object):
 
         else:
             if isinstance(var, gdb.Value):
-                var = int(var.cast(addr_t))
+                var = int(var.cast(s.__addr_t))
 
-            blob = s.__infer.read_memory(var, size)
+            blob = s.__gin.read_memory(var, size)
 
             return (constructor or (lambda x: x))(blob)
 

@@ -3,7 +3,7 @@
 import gdb
 
 from comine.core.logger import log
-from comine.core.libc   import addr_t, ptr_t, size_t
+from comine.core.libc   import LibC
 from comine.core.heman  import HeMan, IHeap, Heap
 from comine.maps.span   import Span
 from comine.maps.errors import MapOutOf
@@ -34,11 +34,13 @@ class TheGlibcHeap(Heap):
 
         s.__log     = log
         s.__mapper  = mapper
+        s.__libc    = mapper.__libc__()
         s.__ready   = False
         s.__ring    = Ring()
         s.__arena   = []
         s.__mp      = frame.read_var('mp_')
-        s.__sc      = _Scale(page = s.__disq_page_size())
+
+        s.__sc = _Scale(s.__libc, page = s.__disq_page_size())
 
         s.__log(4, 'heap page size=%ub' % s.__sc.__page__())
         s.__log(1, "building glibc arena list")
@@ -92,7 +94,7 @@ class TheGlibcHeap(Heap):
         raise Exception('Cannot discover page size')
 
     def __try_to_add_arena(s, _arena):
-        at, seq = long(_arena.cast(addr_t)), len(s.__arena)
+        at, seq = s.__libc.addr(_arena), len(s.__arena)
 
         if seq == 0:
             s.__log(1, 'primary arena entry at 0x%x' % at)
@@ -230,6 +232,7 @@ class _Arena(object):
         s.__arena       = struct
         s.__mask        = 0
         s.__mapper      = mapper
+        s.__libc        = mapper.__libc__()
         s.__world       = mapper.__world__()
         s.__fence       = []
         s.__ring        = ring
@@ -279,7 +282,7 @@ class _Arena(object):
         s.__log(1, 'arena #%i has at most of %s unresolved data'
                 % (s.__seq, Humans.bytes(s.__sysmem - found)))
 
-    def __at__(s):  return int(s.__arena.cast(addr_t))
+    def __at__(s):  return s.__libc.addr(s.__arena)
 
     def __seq__(s): return s.__seq
 
@@ -290,6 +293,7 @@ class _Arena(object):
         ''' Check primary arena layed out on data segment '''
 
         frame   = gdb.selected_frame()
+        addr_t  = s.__libc.std_type('addr_t')
 
         mp = frame.read_var('mp_')['sbrk_base']
 
@@ -320,7 +324,8 @@ class _Arena(object):
     def __check_arena_heap(s):
         ''' Check secondaty heap arenas. It is always contogus '''
 
-        heap_t = gdb.lookup_type('struct _heap_info').pointer()
+        addr_t  = s.__libc.std_type('addr_t')
+        heap_t  = gdb.lookup_type('struct _heap_info').pointer()
 
         heap = s.__arena.cast(heap_t) - 1
 
@@ -387,6 +392,8 @@ class _Arena(object):
                     % (s.__seq, chunks, _hu, _rg[1] >> 1))
 
     def __walk_bins(s, validate = False):
+        addr_t  = s.__libc.std_type('addr_t')
+
         _rg = list(s.__bins.type.range()) + [2]
 
         if not (_rg[1] & 0x01):
@@ -987,14 +994,14 @@ class _Chunk(object):
 
 
 class _Scale(Frozen):
-    def __init__(s, page):
+    def __init__(s, libc, page):
         s.__page    = page
 
         s.type_t = gdb.lookup_type('struct malloc_chunk').pointer()
 
-        s.ptr_t     = ptr_t
-        s.__addr_t  = addr_t
-        s.__size_t  = size_t
+        s.ptr_t     = libc.std_type('ptr_t')
+        s.__addr_t  = libc.std_type('addr_t')
+        s.__size_t  = libc.std_type('size_t')
 
         s.__atom    = int(s.__size_t.sizeof)
 

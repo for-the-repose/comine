@@ -1,27 +1,46 @@
-#__ LGPL 3.0, 2013 Alexander Soloviev (no.friday@yandex.ru)
+#__ LGPL 3.0, 2014 Alexander Soloviev (no.friday@yandex.ru)
 
 import gdb
 
+class LibC(object):
+    __slots__ = ('_LibC__tools', '_LibC__ready', '_LibC__types',
+                    '_LibC__addr_t')
 
-def ptrtype(name):
-    try:
-        t = gdb.lookup_type(name)
+    def __init__(s, tools):
+        assert tools.__gin__()
 
-        return t.pointer()
+        s.__tools   = tools
+        s.__ready   = False
+        s.__types   = {}
 
-    except:
-        return None
+        s.__disq_std_types()
 
+        s.__addr_t = s.std_type('addr_t')
 
-try:
-    addr_t  = gdb.lookup_type('uintptr_t')
-    ptr_t   = gdb.lookup_type('char').pointer()
-    pptr_t  = ptr_t.pointer()
-    size_t  = gdb.lookup_type('size_t')
-    char_t  = gdb.lookup_type('char').pointer()
-    psize_t = size_t.pointer()
+    def __ready__(s):       return s.__ready
 
-except gdb.error as E:
-    print 'Seems there is no debug symbols for GLibC library'
+    def std_type(s, name):  return s.__types.get(name)
 
-    raise
+    def addr(s, obj):       return long(obj.cast(s.__addr_t))
+
+    def __disq_std_types(s):
+        with s.__tools():
+            s.__type_add('uintptr_t', alias = 'addr_t')
+            s.__type_add('char', True, alias = 'ptr_t')
+            s.__type_add('size_t')
+
+    def __type_add(s, name, ptr = False, alias = None):
+        type_t = s.__type_lookup(name, ptr)
+
+        if type_t is not None:
+            s.__types[alias or name] = type_t
+
+    def __type_lookup(s, name, ptr = False):
+        try:
+            type_t = gdb.lookup_type(name)
+
+            return type_t.pointer() if ptr else type_t
+
+        except:
+            pass
+
