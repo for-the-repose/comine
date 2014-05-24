@@ -1,3 +1,4 @@
+#__ LGPL 3.0, 2014 Alexander Soloviev (no.friday@yandex.ru)
 
 class Singleton(type):
     def __init__(cls, name, kl, kw):
@@ -10,6 +11,20 @@ class Singleton(type):
             cls._instance = super(Singleton, cls).__call__(*kl, **kw)
 
         return cls._instance
+
+
+class Frozen(object):
+	__slots__ = ('_Frozen__yes',)
+
+	def __init__(s):
+		s.__yes = True
+
+	def __setattr__(s, name, val):
+		if hasattr(s, '_Frozen__yes'):
+			raise Exception('Instance 0x%x of %s is frozen'
+                                % (id(s), s.__class__.__name__))
+
+		object.__setattr__(s, name, val)
 
 
 class Types(object):
