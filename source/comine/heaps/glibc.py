@@ -189,7 +189,7 @@ class TheGlibcHeap(IHeap):
             relation, offset = chunk.relation(at)
 
             if relation == IHeap.REL_OUTOF:
-                return
+                continue
 
             elif span.exten().__tag__() == EHeap.TAG_MMAPPED:
                 relation = IHeap.REL_HUGE

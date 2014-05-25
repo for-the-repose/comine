@@ -8,6 +8,8 @@ class IHeap(IOwner):
     REL_HUGE    = 6;    REL_HEAD    = 7;    REL_INTERN  = 8
     REL_WASTE   = 9;
 
+    IGNORE = (REL_OUTOF, REL_UNKNOWN)
+
     REL_NAMES = { REL_OUTOF : 'outof', REL_ZERO : 'zero',
                     REL_KEEP : 'keep', REL_FREE : 'free',
                     REL_CHUNK : 'chunk', REL_HUGE  : 'huge',

@@ -84,7 +84,7 @@ class HeMan(object):
         for impl in s.enum():
             result = impl.lookup(at)
 
-            if result[0] not in (IHeap.REL_OUTOF, IHeap.REL_UNKNOWN):
+            if result and result[0] not in IHeap.IGNORE:
                 yield (impl, result)
 
     def enum(s, all = False, meta = False):
