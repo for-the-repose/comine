@@ -14,8 +14,8 @@ from comine.misc.types  import Singleton
 from comine.misc.humans import Humans
 from comine.gdb.tools   import Tools
 
-class Mapper(object):
-    ''' Memory region mappings table registery '''
+class Infer(object):
+    ''' Inferior comine objects manager '''
 
     __metaclass__ = Singleton
 
@@ -41,7 +41,7 @@ class Mapper(object):
 
         s.__discover_mode()
 
-        if s.__mode in (Mapper.MODE_LIVE, Mapper.MODE_VOLATILE):
+        if s.__mode in (Infer.MODE_LIVE, Infer.MODE_VOLATILE):
             s.__maps.use_pid(s.__gin.pid)
 
             s.__memory = Memory(s)
@@ -78,13 +78,13 @@ class Mapper(object):
 
     def __discover_mode(s):
         if len(s.__core) > 0:
-            s.__mode = Mapper.MODE_CORE
+            s.__mode = Infer.MODE_CORE
 
         else:
-            s.__mode = Mapper.MODE_LIVE
+            s.__mode = Infer.MODE_LIVE
 
-        log(1, 'mapper works in mode %s'
-                    % (Mapper.__SYM_MODE.get(s.__mode),) )
+        log(1, 'infer works in mode %s'
+                    % (Infer.__SYM_MODE.get(s.__mode),) )
 
     def readvar(s, var, size, gdbval = True, constructor = None):
         ''' Read blob from given memory location '''
@@ -106,4 +106,3 @@ class Mapper(object):
             type_t = var.type.pointer()
 
         return gdb.Value(var.address).cast(type_t)
-

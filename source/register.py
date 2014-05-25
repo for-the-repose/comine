@@ -14,8 +14,8 @@ except Exception as E:
     pass
 
 else:
-    from comine.core.mapper import Mapper
+    from comine.core.infer  import Infer
     from comine.heaps.glibc	import TheGlibcHeap
 
-    mapper = Mapper()
+    infer = Infer()
 

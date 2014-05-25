@@ -39,9 +39,9 @@ class _Plugs(object):
 
 
 class HeMan(object):
-    def __init__(s, mapper):
+    def __init__(s, infer):
         s.__heaps   = {}
-        s.__mapper  = mapper
+        s.__infer   = infer
         s.__ref     = ScnRef(_Plugs())
         s.__log     = log
 
@@ -51,7 +51,7 @@ class HeMan(object):
         return 'HeMan(%s, %u heaps)' \
                     % (s.__ref.__desc__(), len(s.__heaps))
 
-    def __infer__(s):   return s.__mapper
+    def __infer__(s):   return s.__infer
 
     def sync(s, force = False):
         if not s.__ref.valid() or force:
@@ -64,7 +64,7 @@ class HeMan(object):
                     used.remove(meta.__who__())
 
                 else:
-                    inst = _Inst(meta, s.__mapper, s.__log)
+                    inst = _Inst(meta, s.__infer, s.__log)
 
                     s.__heaps[meta.__who__()] = inst
 
@@ -123,9 +123,9 @@ class _Meta(object):
 
 
 class _Inst(object):
-    def __init__(s, meta, mapper, log):
+    def __init__(s, meta, infer, log):
         s.__meta    = meta
-        s.__mapper  = mapper
+        s.__infer   = infer
         s.__log     = log
 
         s.__reset()
@@ -158,7 +158,7 @@ class _Inst(object):
             s.__start   = int(time())
 
             try:
-                s.__impl = s.__meta(log = s.__pass, mapper = s.__mapper)
+                s.__impl = s.__meta(log = s.__pass, infer = s.__infer)
 
             except Exception as E:
                 tb, s.__impl = [], False

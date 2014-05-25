@@ -2,7 +2,7 @@
 
 from gdb    import Command, COMMAND_OBSCURE, COMPLETE_NONE
 
-from comine.core.mapper import Mapper
+from comine.core.infer  import Infer
 
 
 class CLines(Command):
@@ -26,7 +26,7 @@ class CLines(Command):
         cmd = getattr(s, s.__base + sub, None)
 
         if cmd is not None:
-            infer = Mapper()
+            infer = Infer()
 
             try:
                 s.__invoke(cmd, infer, argv)

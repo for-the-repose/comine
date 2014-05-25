@@ -29,12 +29,12 @@ class ErrorDamaged(Exception):
 class TheGlibcHeap(IHeap):
     ''' The GLibc heap validator and data miner '''
 
-    def __init__(s, log, mapper):
+    def __init__(s, log, infer):
         frame   = gdb.selected_frame()
 
         s.__log     = log
-        s.__mapper  = mapper
-        s.__libc    = mapper.__libc__()
+        s.__infer   = infer
+        s.__libc    = infer.__libc__()
         s.__ready   = False
         s.__ring    = Ring()
         s.__arena   = []
@@ -65,9 +65,9 @@ class TheGlibcHeap(IHeap):
 
         s.__ready = True
 
-        mapper.__world__().push(s, s.__ring, provide = 'heap')
+        infer.__world__().push(s, s.__ring, provide = 'heap')
 
-        _Guess(log, s.__mapper.__world__(), s.__ring, sc = s.__sc)()
+        _Guess(log, s.__infer.__world__(), s.__ring, sc = s.__sc)()
 
         s.__examine_mmaps()
 
@@ -100,7 +100,7 @@ class TheGlibcHeap(IHeap):
             s.__log(1, 'primary arena entry at 0x%x' % at)
 
         if not s.__arena_by_addr(at):
-            if not s.__mapper.validate(at):
+            if not s.__infer.validate(at):
                 raise Exception('Arena ptr refers to nowhere')
 
             try:
@@ -118,7 +118,7 @@ class TheGlibcHeap(IHeap):
                 return True
 
     def __make_arena(s, _arena, seq):
-        return _Arena(s.__sc, _arena, seq, s.__ring, s.__log, s.__mapper)
+        return _Arena(s.__sc, _arena, seq, s.__ring, s.__log, s.__infer)
 
     def __examine_mmaps(s):
         ''' Analyse mmap() settings for the heap.
@@ -222,7 +222,7 @@ class TheGlibcHeap(IHeap):
 class _Arena(object):
     FL_NON_CONTIGOUS    = 0x02
 
-    def __init__(s, sc, struct, seq, ring, log, mapper):
+    def __init__(s, sc, struct, seq, ring, log, infer):
         if struct.type.code != gdb.TYPE_CODE_PTR:
             raise TypeError('pointer to struct is needed')
 
@@ -231,9 +231,9 @@ class _Arena(object):
         s.__primary     = (s.__seq == 0)
         s.__arena       = struct
         s.__mask        = 0
-        s.__mapper      = mapper
-        s.__libc        = mapper.__libc__()
-        s.__world       = mapper.__world__()
+        s.__infer       = infer
+        s.__libc        = infer.__libc__()
+        s.__world       = infer.__world__()
         s.__fence       = []
         s.__ring        = ring
         s.__bound       = None
@@ -403,10 +403,10 @@ class _Arena(object):
             if s.__bins[x] == s.__bins[x+1]: continue
 
             if validate is not False:
-                if not s.__mapper.validate(s.__bins[x].cast(addr_t)):
+                if not s.__infer.validate(s.__bins[x].cast(addr_t)):
                     raise Exception('invalid bin list head')
 
-                if not s.__mapper.validate(s.__bins[x+1].cast(addr_t)):
+                if not s.__infer.validate(s.__bins[x+1].cast(addr_t)):
                     raise Exception('invalid bin list head')
 
             first = _Chunk(s.__sc, s.__bins[x], _Chunk.TYPE_BIN, _arena = s,
