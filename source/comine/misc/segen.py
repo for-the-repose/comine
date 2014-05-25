@@ -56,6 +56,11 @@ class ScnRef(object):
 
     def __call__(s):    return s.__ref
 
+    def __desc__(s):
+        slit = 'f' if s.valid() else 's'
+
+        return '%s:%x08u' % (slit, s.__ref.__scn__())
+
     def valid(s, sync = False):
         try:
             return s.__scn == s.__ref.__scn__()
