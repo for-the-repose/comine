@@ -4,30 +4,28 @@ from re     import match
 
 import gdb
 
+from comine.iface.infer import ILayout
 from comine.core.libc   import LibC
 from comine.core.logger import log
 from comine.core.world  import World
 from comine.core.base   import Core, Memory, Mappings
 from comine.core.exun   import Exuns
 from comine.core.heman  import HeMan
-from comine.misc.types  import Singleton
 from comine.misc.humans import Humans
 from comine.gdb.tools   import Tools
 
 class Infer(object):
     ''' Inferior comine objects manager '''
 
-    __metaclass__ = Singleton
-
     MODE_CORE   = 1;    MODE_LIVE   = 2;    MODE_VOLATILE = 3
 
     __SYM_MODE = { MODE_CORE : 'core', MODE_LIVE : 'live',
                     MODE_VOLATILE : 'volatile' }
 
-    def __init__(s):
+    def __init__(s, tools, source):
         s.__mode        = None
-        s.__gin         = gdb.selected_inferior()
-        s.__tools       = Tools(gin = s.__gin)
+        s.__gin         = tools.__gin__()
+        s.__tools       = tools
         s.__world       = World()
         s.__attached    = False
         s.__world       = World()
@@ -39,12 +37,15 @@ class Infer(object):
         s.__exuns   = Exuns(s)
         s.__maps    = Mappings(s)
 
-        s.__discover_mode()
+        s.__discover_mode(source)
 
         if s.__mode in (Infer.MODE_LIVE, Infer.MODE_VOLATILE):
             s.__maps.use_pid(s.__gin.pid)
 
             s.__memory = Memory(s)
+
+        elif isinstance(source, ILayout):
+            s.__maps.use_file(source.__maps__())
 
         s.__libc    = LibC(s.__tools)
         s.__addr_t  = s.__libc.std_type('addr_t')
@@ -76,12 +77,16 @@ class Infer(object):
     def attach(s, path):
         s.__maps.use_file(path)
 
-    def __discover_mode(s):
+    def __discover_mode(s, source):
         if len(s.__core) > 0:
             s.__mode = Infer.MODE_CORE
 
+            assert isinstance(source, (type(None), ILayout))
+
         else:
             s.__mode = Infer.MODE_LIVE
+
+            assert isinstance(source, (type(None), int))
 
         log(1, 'infer works in mode %s'
                     % (Infer.__SYM_MODE.get(s.__mode),) )

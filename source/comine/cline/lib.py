@@ -2,7 +2,7 @@
 
 from gdb    import Command, COMMAND_OBSCURE, COMPLETE_NONE
 
-from comine.core.infer  import Infer
+from comine.core.space  import Space
 
 
 class CLines(Command):
@@ -11,6 +11,7 @@ class CLines(Command):
 
         s.__base = '_%s__sub_%s_' % (s.__class__.__name__, space)
         s.__invoke = invoke
+        s.__space   = Space()
 
     def invoke(s, args, tty):
         s.dont_repeat()
@@ -26,7 +27,7 @@ class CLines(Command):
         cmd = getattr(s, s.__base + sub, None)
 
         if cmd is not None:
-            infer = Infer()
+            infer = s.__space()
 
             try:
                 s.__invoke(cmd, infer, argv)

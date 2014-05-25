@@ -80,9 +80,10 @@ class Mappings(IOwner):
 
     @attach
     def use_file(s, path):
-        s.__mode = str(path)
+        if path is not None:
+            s.__mode = str(path)
 
-        s.__read_maps_procs(Maps.read(path))
+            s.__read_maps_procs(Maps.read(path))
 
     @attach
     def use_pid(s, pid):

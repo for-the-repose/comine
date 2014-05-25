@@ -1,6 +1,8 @@
 #__ LGPL 3.0, 2014 Alexander Soloviev (no.friday@yandex.ru)
 
-from gdb    import execute, Inferior, selected_inferior
+import gdb
+
+from re     import match
 
 from comine.iface.infer import ILayout
 from comine.misc.types  import Types
@@ -16,12 +18,12 @@ class Tools(object):
         return _wrap
 
     def __init__(s, gin = None):
-        s.__gin     = Types.ensure(gin, Inferior, none = True)
-        s.__exec    = execute
+        s.__gin     = Types.ensure(gin, gdb.Inferior, none = True)
+        s.__exec    = gdb.execute
 
     def __gin__(s):     return s.__gin
 
-    def __sel__(s):     return selected_inferior()
+    def __sel__(s):     return gdb.selected_inferior()
 
     def __call__(s):
         if s.__gin is None:
@@ -65,14 +67,31 @@ class Tools(object):
         s.call('core-file %s' % layout.__core__())
 
     def switch(s, num):
-        s.call('inferior %u' % Types.ensure(num, int))
+        s.call('inferior %u' % Types.ensure(num, (int, long)))
 
         assert s.__sel__().num == num
 
     def make(s):
-        ''' Make an empty infer '''
+        out = s.call('add-inferior')
 
-        raise Exception('Not implemented')
+        g = match('.*inferior (\d+)', out)
+
+        if g is None:
+            raise Exception('Unexpected gdb resp "%s"' % out)
+
+        else:
+            num = int(g.group(1))
+
+            gins = filter(lambda x: x.num == num, gdb.inferiors())
+
+            if len(gins) == 0:
+                raise Exception('cannot find just created gin=%u' % num)
+
+            elif len(gins) > 1:
+                raise Exception('too much gins with num=%u found' % num)
+
+            else:
+                return gins[0]
 
 
 class _Enter(object):

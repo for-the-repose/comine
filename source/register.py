@@ -14,8 +14,8 @@ except Exception as E:
     pass
 
 else:
-    from comine.core.infer  import Infer
+    from comine.core.space  import Space
     from comine.heaps.glibc	import TheGlibcHeap
 
-    infer = Infer()
+    space = Space()
 
