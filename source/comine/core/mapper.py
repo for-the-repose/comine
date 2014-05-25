@@ -9,6 +9,7 @@ from comine.core.logger import log
 from comine.core.world  import World
 from comine.core.base   import Core, Memory, Mappings
 from comine.core.exun   import Exuns
+from comine.core.heman  import HeMan
 from comine.misc.types  import Singleton
 from comine.misc.humans import Humans
 from comine.gdb.tools   import Tools
@@ -48,9 +49,13 @@ class Mapper(object):
         s.__libc    = LibC(s.__tools)
         s.__addr_t  = s.__libc.std_type('addr_t')
 
+        s.__heman   = HeMan(s)
+
     def __world__(s):   return s.__world
 
     def __libc__(s):    return s.__libc
+
+    def __heman__(s):   return s.__heman
 
     def search_memory(s, *kl, **kw):
         return s.__gin.search_memory(*kl, **kw)

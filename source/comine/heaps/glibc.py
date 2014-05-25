@@ -4,7 +4,7 @@ import gdb
 
 from comine.core.logger import log
 from comine.core.libc   import LibC
-from comine.core.heman  import HeMan, IHeap, Heap
+from comine.core.heman  import HeMan, IHeap
 from comine.maps.span   import Span
 from comine.maps.errors import MapOutOf
 from comine.maps.ring   import Ring
@@ -26,7 +26,7 @@ class ErrorDamaged(Exception):
 
 
 @HeMan.register
-class TheGlibcHeap(Heap):
+class TheGlibcHeap(IHeap):
     ''' The GLibc heap validator and data miner '''
 
     def __init__(s, log, mapper):

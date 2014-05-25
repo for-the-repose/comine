@@ -14,6 +14,21 @@ class IHeap(IOwner):
                     REL_HEAD: 'head', REL_INTERN : 'intrn',
                     REL_WASTE : 'waste' }
 
+    def __init__(s, log, infer):
+        '''
+            Heap disq module init call. Heap manager pass
+
+            log     logging functor log(lev, msg), used for logging
+                    any debug and info messaages. This output may be
+                    filtered and preserved by manager;
+
+            infer   Infer() object to which heap manager was attached.
+                    Heap disq module should do all its discovery only
+                    in this inferior;
+        '''
+
+        IOwner.__init__(s)
+
     @classmethod
     def __who__(s):     # -> str
         "Should provide name of heap impl"

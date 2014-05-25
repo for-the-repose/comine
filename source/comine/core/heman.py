@@ -3,45 +3,82 @@
 from time   import time
 
 from comine.iface.heap  import IHeap
-from comine.core.mapper import Mapper
 from comine.core.trace  import trace_write
 from comine.core.logger import log
-from comine.misc.types  import Singleton
+from comine.misc.types  import Types, Singleton
+from comine.misc.segen  import Scn, ScnRef
 
-class Sticker(type):
-    def __init__(cls, name, kl, kw):
-        super(Sticker, cls).__init__(name, kl, kw)
-
-    def __call__(cls, *kl, **kw):
-        inst = HeMan().get(cls.__who__(), meta = False)
-
-        if inst and not isinstance(inst, cls):
-            raise TypeError('HeMan() gave invalid heap instance')
-
-        return inst or super(Sticker, cls).__call__(*kl, **kw)
-
-
-class Heap(IHeap):
-    __metaclass__  = Sticker
-
-
-class HeMan(object):
+class _Plugs(object):
     __metaclass__ = Singleton
 
     def __init__(s):
-        s.__ready   = False
+        s.__scn     = Scn()
         s.__heaps   = {}
-        s.__found   = []
-        s.__mapper  = Mapper()
+
+    def __scn__(s):     return int(s.__scn)
+
+    def enum(s):        return s.__heaps.itervalues()
+
+    def push(s, cls):
+        if issubclass(cls, IHeap):
+            name = getattr(cls, '__who__')()
+
+            meta = s.__heaps.get(name)
+
+            if meta and meta.__cls__() != cls:
+                log(1, 'heap %s already registered' % name)
+
+            elif not meta:
+                s.__scn.alter()
+                s.__heaps[name] = _Meta(cls)
+
+                log(1, 'registered new heap %s disq plug' % name)
+
+        else:
+            log(1, 'unknown heap impl %s' % str(cls))
+
+
+class HeMan(object):
+    def __init__(s, mapper):
+        s.__heaps   = {}
+        s.__mapper  = mapper
+        s.__ref     = ScnRef(_Plugs())
+        s.__log     = log
+
+        s.sync(force = True)
+
+    def __str__(s):
+        return 'HeMan(%s, %u heaps)' \
+                    % (s.__ref.__desc__(), len(s.__heaps))
+
+    def __infer__(s):   return s.__mapper
+
+    def sync(s, force = False):
+        if not s.__ref.valid() or force:
+            used = set(s.__heaps.keys())
+
+            for meta in _Plugs().enum():
+                inst = s.__heaps.get(meta.__who__())
+
+                if inst is not None:
+                    used.remove(meta.__who__())
+
+                else:
+                    inst = _Inst(meta, s.__mapper, s.__log)
+
+                    s.__heaps[meta.__who__()] = inst
+
+            for name in used:
+                inst = s.__heaps.pop(name)
+
+            return True
 
     def disq(s, force = False):
-        s.__mapper = Mapper()
+        s.sync()
 
         for name, heap in s.__heaps.items():
             if heap._Inst__disq(force = force) is True:
                 log(1, 'discovered heap %s' % name)
-
-        s.__ready = True
 
     def lookup(s, at):  #  -> { (impl, IHeap.lookup(at)) }
         for impl in s.enum():
@@ -63,44 +100,39 @@ class HeMan(object):
         if heap is not None:
             return heap if meta else heap.__impl__()
 
-    def __str__(s):
-        return 'HeMan(%u heaps, %s)' % (len(s.__heaps),)
-
-    def __push(s, cls):
-        if issubclass(cls, IHeap):
-            name = getattr(cls, '__who__')()
-
-            inst = s.__heaps.get(name)
-
-            if inst and inst.__cls__ != cls:
-                log(1, 'heap %s already registered' % name)
-
-            elif not inst:
-                s.__heaps[name] = _Inst(cls, s.__mapper, log)
-
-                log(1, 'registered new heap %s' % name)
-
-        else:
-            log(1, 'unknown heap impl %s' % str(cls))
-
     @staticmethod
     def register(cls):
-        HeMan().__push(cls)
+        _Plugs().push(cls)
 
         return cls
 
 
+class _Meta(object):
+    __slots__ = ('_Meta__cls', '_Meta__name')
+
+    def __init__(s, cls):
+        s.__cls     = Types.ensure(cls, IHeap)
+        s.__name    = cls.__who__()
+
+    def __cls__(s):     return s.__cls
+
+    def __who__(s):     return s.__name
+
+    def __call__(s, *kl, **kw):
+        return s.__cls(*kl, **kw)
+
+
 class _Inst(object):
-    def __init__(s, cls, mapper, log):
-        s.__cls     = cls
+    def __init__(s, meta, mapper, log):
+        s.__meta    = meta
         s.__mapper  = mapper
         s.__log     = log
 
         s.__reset()
 
-    def __cls__(s):     return c.__cls
+    def __meta__(s):    return s.__meta
 
-    def __who__(s):     return s.__cls.__who__()
+    def __who__(s):     return s.__meta.__who__()
 
     def __impl__(s):
         return s.__impl if s.__impl else None
@@ -126,13 +158,13 @@ class _Inst(object):
             s.__start   = int(time())
 
             try:
-                s.__impl = s.__cls(log = s.__pass, mapper = s.__mapper)
+                s.__impl = s.__meta(log = s.__pass, mapper = s.__mapper)
 
             except Exception as E:
                 tb, s.__impl = [], False
 
                 s.__log(1, "heap impl %s raised with '%s'"
-                               % (s.__cls.__who__(), str(E)))
+                               % (s.__meta.__who__(), str(E)))
 
                 trace_write(lambda x: tb.append(x), extended = True)
 
@@ -157,4 +189,4 @@ class _Inst(object):
         s.__log(lev, line)
 
 
-__init__ = (HeMan, IHeap, Heap)
+__init__ = (HeMan, IHeap)
