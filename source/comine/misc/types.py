@@ -1,5 +1,7 @@
 #__ LGPL 3.0, 2014 Alexander Soloviev (no.friday@yandex.ru)
 
+from inspect    import isclass
+
 class Singleton(type):
     def __init__(cls, name, kl, kw):
         super(Singleton, cls).__init__(name, kl, kw)
@@ -61,7 +63,15 @@ class Types(object):
             if none is not True:
                 raise TypeError('object is not set')
 
-        elif types and not isinstance(obj, types):
-            raise TypeError('Invalid type=%s' % obj)
+        elif types is None:
+            pass
+
+        elif isclass(obj):
+            if not issubclass(obj, types):
+                raise TypeError('Invalid class=%s' % obj)
+
+        elif True:
+            if not isinstance(obj, types):
+                raise TypeError('Invalid type=%s' % obj)
 
         return obj
