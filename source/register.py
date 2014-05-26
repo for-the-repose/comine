@@ -15,7 +15,7 @@ except Exception as E:
 
 else:
     from comine.core.space  import Space
-    from comine.heaps.glibc	import TheGlibcHeap
+    from comine.cline.maint import CMaint
 
     space = Space()
 

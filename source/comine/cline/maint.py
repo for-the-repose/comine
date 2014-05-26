@@ -32,3 +32,6 @@ class CMaint(CLines):
 
     def __sub_comine_this(s, infer, argv):
         Space().open(None)
+
+    def __sub_comine_boot(s, infer, argv):
+        Space().boot(fresh = argv and argv[0] == 'reload')

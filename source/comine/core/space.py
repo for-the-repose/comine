@@ -5,17 +5,18 @@ import gdb
 from comine.iface.infer import ILayout
 from comine.misc.types  import Singleton
 from comine.core.infer  import Infer
+from comine.core.plugs  import Plugs
 from comine.gdb.tools   import Tools
-
 
 class Space(object):
     __metaclass__ = Singleton
 
-    __slots__ = ('_Space__inmap', '_Space__tools')
+    __slots__ = ('_Space__inmap', '_Space__tools', '_Space__plugs')
 
     def __init__(s):
         s.__inmap   = {} # { gin -> Infer() }
         s.__tools   = Tools()
+        s.__plugs   = Plugs()
 
     def __call__(s):
         empty, gin = s.__gin_selected()
@@ -25,6 +26,9 @@ class Space(object):
 
     def info(s):
         return s.__tools.version()
+
+    def boot(s, fresh = False):
+        s.__plugs.load(force = fresh)
 
     def open(s, source = None):
         gin = s.__gin_for(source)
@@ -37,6 +41,7 @@ class Space(object):
 
         tools = Tools(gin)
 
+        s.__plugs.load()
         s.__prepare(tools, source)
 
         s.__inmap[gin] = Infer(tools, source)
