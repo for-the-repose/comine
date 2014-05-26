@@ -1,5 +1,8 @@
 #__ LGPL 3.0, 2014 Alexander Soloviev (no.friday@yandex.ru)
 
+class LayoutError(Exception):
+    pass
+
 class ILayout(object):
     def __binary__(s):
         ''' Path to binary executable '''

@@ -5,7 +5,7 @@ from os.path    import abspath, split, exists, isfile, isdir
 from re         import match
 from itertools  import takewhile
 
-from comine.iface.infer import ILayout
+from comine.iface.infer import ILayout, LayoutError
 
 class Layout(ILayout):
     '''
@@ -47,28 +47,53 @@ class Layout(ILayout):
     def __root__(s):    return s.__abs(s.__root)
 
     def __locate(s, path):    # -> (binary, core, root, maps)
-        if not isfile(path):
-            raise Exception('path to core file is not exists')
-
-        s.__base, s.__core = split(path)
+        s.__examine_path(path)
 
         for name in listdir(s.__base):
             for slot in _Meta().check(s.__base, name):
                 s.__slots[slot].append(name)
 
-        if s.__core not in s.__slots.get('core', []):
-            raise Exception('Core file "%s" was not found in layout' % s.__core)
-
+        s.__select_core()
         s.__select_binary()
 
         s.__maps = (s.__slots.get('maps') or [None])[0]
         s.__root = (s.__slots.get('root') or [None])[0]
 
+    def __examine_path(s, path):
+        if isfile(path):
+            s.__base, s.__core = split(path)
+
+        elif isdir(path):
+            s.__base, s.__core = path, None
+
+        else:
+            raise LayoutError('path to core file is not exists')
+
+    def __select_core(s):
+        cores = s.__slots.get('core', [])
+
+        if s.__core and s.__core in cores:
+            pass
+
+        elif s.__core is not None:
+            raise LayoutError('Core "%s" was not found in layout' % s.__core)
+
+        elif len(cores) == 0:
+            raise LayoutError('Core files was not found in layout')
+
+        elif len(cores) > 1:
+            pat = '%u cores found, pass explicitly one'
+
+            raise LayoutError(pat % len(cores))
+
+        else:
+            s.__core = cores[0]
+
     def __select_binary(s):
         bins = s.__slots.get('binary')
 
         if len(bins) < 1:
-            raise Exception('Binary file was not found in layout')
+            raise LayoutError('Binary file was not found in layout')
 
         elif len(bins) == 1:
             s.__bin = bins[0]
@@ -77,7 +102,7 @@ class Layout(ILayout):
             s.__bin = 'binary'
 
         else:
-            raise Exception('Too many binaries exists in layout')
+            raise LayoutError('Too many binaries exists in layout')
 
     def __abs(s, sub):
         return abspath(s.__base + '/' + sub) if sub else None
