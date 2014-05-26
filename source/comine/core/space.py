@@ -4,8 +4,10 @@ import gdb
 
 from comine.iface.infer import ILayout
 from comine.misc.types  import Singleton
+from comine.core.logger import log
 from comine.core.infer  import Infer
 from comine.core.plugs  import Plugs
+from comine.core.bugs   import Bugs
 from comine.gdb.tools   import Tools
 
 class Space(object):
@@ -29,6 +31,12 @@ class Space(object):
 
     def boot(s, fresh = False):
         s.__plugs.load(force = fresh)
+
+        bugs = len(list(Bugs().check()))
+
+        if bugs > 0:
+            log(1, 'found %u bugs for current runtime env' % bugs)
+            log(1, 'see comine bugs command for details')
 
     def open(s, source = None):
         gin = s.__gin_for(source)
