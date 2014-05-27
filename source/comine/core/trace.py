@@ -1,4 +1,5 @@
 
+from os.path    import split
 from sys        import exc_info
 from time       import gmtime, strftime
 from traceback  import format_exc
@@ -36,3 +37,10 @@ def trace_write(_call, extended = False):
                 _call('exception='+str(E))
 
             traceback = traceback.tb_next; depth += 1
+
+def location():
+    etype, eo, trace = exc_info()
+
+    name = split(trace.tb_frame.f_code.co_filename)[1]
+
+    return (etype, name, trace.tb_lineno)
