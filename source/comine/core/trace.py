@@ -38,8 +38,16 @@ def trace_write(_call, extended = False):
 
             traceback = traceback.tb_next; depth += 1
 
-def location():
+def location(skip = 1):
     etype, eo, trace = exc_info()
+
+    print etype, eo, trace
+
+    for z in xrange(skip):
+        if trace.tb_next is None:
+            break
+
+        trace = trace.tb_next
 
     name = split(trace.tb_frame.f_code.co_filename)[1]
 
