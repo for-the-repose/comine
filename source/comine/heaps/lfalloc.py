@@ -1,8 +1,10 @@
 import gdb
 
+from itertools          import chain
 from comine.core.heman  import HeMan, IHeap
 from comine.maps.exten  import IExten
 from comine.maps.ring   import Ring
+from comine.heaps.pred  import _HNil
 from comine.misc.humans import Humans
 
 @HeMan.register
@@ -16,12 +18,14 @@ class TheLfAlloc(IHeap):
     def __init__(s, log, infer):
         rvar = gdb.selected_frame().read_var
 
+        props = [ ('upper', TheLfAlloc.__fn_max_chunk, s) ]
+
         s.__ready   = None
         s.__log     = log
         s.__infer   = infer
         s.__libc    = infer.__libc__()
         s.__world   = infer.__world__()
-        s.__ring    = Ring()
+        s.__ring    = Ring(props = props)
 
         s.__page    = TheLfAlloc.PAGE
         s.__s2blo   = None  # small blocks enum, { index -> [ block ] }
@@ -245,7 +249,7 @@ class TheLfAlloc(IHeap):
             walk = s.__world.physical(s.__huge, unused = s.__ring)
 
             for place, spans in walk:
-                s.__add_huge_block_as(place, EHeap.TAG_HUGE, stats, trans)
+                s.__add_huge_block_as(place, EHeap.TAG_MMAP, stats, trans)
 
         s.__log(1, 'found %s in %u (=%u) huge regs blocks'
                     % (Humans.bytes(stats[1]), stats[0], stats[2]))
@@ -293,24 +297,13 @@ class TheLfAlloc(IHeap):
 
                     return (rg[0] + s.__page, pages, pages * s.__page, exact)
 
-    def enum_huge(s, larger = 0, lower = None):
-        lower = lower or TheLfAlloc.LIMIT
-
-        pred = EHeap.pred(tags = (EHeap.TAG_HUGE, EHeap.TAG_FREE))
-
-        for span in s.__ring.enum(pred = pred):
-            size = len(span) - s.__page
-
-            if larger <= size < lower:
-                yield (span.__rg__(0) + s.__page, size)
-
     def lookup(s, at):  # -> (rel, aligned, offset, size)
-        span = s.__ring.lookup(at)
+        span    = s.__ring.lookup(at)[1]
+        exten   = span and span.exten()
 
-        if span is None:
+        if exten is None:
             pass
-
-        elif span.exten().__tag__() == EHeap.TAG_SMALL:
+        elif exten.__tag__() == EHeap.TAG_SMALL:
             BLOCKS  = TheLfAlloc.BLOCKS
 
             rel     = IHeap.REL_CHUNK
@@ -337,37 +330,93 @@ class TheLfAlloc(IHeap):
                     gran, rel = None, IHeap.REL_INTERN
                 elif item * size >= s.__waste[index]:
                     rel, size = IHeap.REL_INTERN, BLOCKS - s.__waste[index]
+                elif s.__s2free is None:
+                    rel = IHeap.REL_MAYBE
                 elif at in s.__s2free[index]:
                     rel = IHeap.REL_FREE
 
             return (rel, chunk, at - chunk, size, gran)
 
-        elif span.exten().__tag__() in (EHeap.TAG_FREE, EHeap.TAG_HUGE):
-            chunk   = span.__rg__()[0] + s.__page
-            size    = len(span) - s.__page
-
-            rel = {
-                    EHeap.TAG_FREE: IHeap.REL_FREE,
-                    EHeap.TAG_HUGE: IHeap.REL_HUGE }.get(rel)
-
-            if span.__rg__()[0] <= at < chunk:
-                return (rel, chunk, at - chunk, size)
-            elif chunk <= at <= s.__rg__()[1]:
-                return (rel, chunk, at - chunk, size, s.__page)
+        elif exten.__tag__() in EHeap.TAGS_HUGE:
+            return s.__huge_meta(span, at)
 
         return (IHeap.REL_OUTOF, None, None, None, None)
+
+    def enum(s, place = None, pred = None, huge = None):
+         with (pred or _HNil()).begin(s.__round) as pred:
+            sizes, cond = s.__enums_rg_cond(huge)
+
+            if pred.__prec__(rg = sizes):
+                for span in s.__ring.enum(place, pred = cond):
+                    exten   = span and span.exten()
+
+                    if exten.__tag__() == EHeap.TAG_SMALL:
+                        raise Exception('Not implemented')
+                    elif exten.__tag__() == EHeap.TAG_MMAP:
+                        yield s.__huge_meta(span)
+
+    def __huge_meta(s, span, at = None):
+        T2REL = { EHeap.TAG_FREE: IHeap.REL_FREE,
+                    EHeap.TAG_MMAP: IHeap.REL_HUGE }
+
+        chunk   = span.__rg__()[0] + s.__page
+        size    = len(span) - s.__page
+        rel     = T2REL.get(span.exten().__tag__())
+
+        if at is None:
+            return (rel, chunk, size, s.__page)
+
+        else:
+            return (rel, chunk, at - chunk, size, s.__page)
+
+    def __round(s, size):
+        for z in xrange(0, len(s.__sizes)):
+            if size <= s.__sizes[z]:
+                return s.__sizes[z]
+        else:
+            mask = s.__page - 1
+            size += mask
+
+            return size ^ (size & mask)
+
+    def __enums_rg_cond(s, huge):
+        return s.__rg_for_huge(huge), s.__ring_pred_for(huge)
+
+    def __ring_pred_for(s, huge):
+        H2TAG = { True: EHeap.TAGS_HUGE, False: (EHeap.TAG_SMALL,) }
+
+        return EHeap.pred(H2TAG.get(huge))
+
+    def __rg_for_huge(s, huge):
+        upper = huge is False or s.__ring.prop('upper')
+
+        if huge is True:
+            return (s.__sizes[-1] + 1, upper)
+        elif huge is False:
+            return (0, s.__sizes[-1] + 1)
+        else:
+            return (0, upper)
+
+    @classmethod
+    def __fn_max_chunk(cls, ring, heap):
+        pred    = EHeap.pred(tag = EHeap.TAGS_HUGE)
+        huges   = ring.enum(pred = pred, conv = len)
+
+        return max(chain([ heap.__sizes[-1] + 1 ], huges))
 
 
 class EHeap(IExten):
     __slots__ = ('_EHeap__heap', '_EHeap__tag')
 
     TAG_SMALL   = 1 # Fragments of large span used for small blocks
-    TAG_HUGE    = 2 # Allocated huge block with single mmap() call
+    TAG_MMAP    = 2 # Allocated huge block with single mmap() call
     TAG_FREE    = 3 #
+
+    TAGS_HUGE = (TAG_MMAP, TAG_FREE)
 
     __NAMES = {
             TAG_SMALL:      'small',
-            TAG_HUGE:       'huge',
+            TAG_MMAP:       'huge',
             TAG_FREE:       'free' }
 
     def __init__(s, heap = None, tag = None, *kl, **kw):
