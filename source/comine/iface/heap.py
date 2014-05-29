@@ -6,7 +6,7 @@ class IHeap(IOwner):
     REL_UNKNOWN = 0;    REL_OUTOF   = 1;    REL_ZERO    = 2
     REL_KEEP    = 3;    REL_FREE    = 4;    REL_CHUNK   = 5
     REL_HUGE    = 6;    REL_HEAD    = 7;    REL_INTERN  = 8
-    REL_WASTE   = 9;
+    REL_WASTE   = 9;    REL_MAYBE   = 10;
 
     IGNORE = (REL_OUTOF, REL_UNKNOWN)
 
@@ -14,7 +14,7 @@ class IHeap(IOwner):
                     REL_KEEP : 'keep', REL_FREE : 'free',
                     REL_CHUNK : 'chunk', REL_HUGE  : 'huge',
                     REL_HEAD: 'head', REL_INTERN : 'intrn',
-                    REL_WASTE : 'waste' }
+                    REL_WASTE : 'waste', REL_MAYBE : 'maybe' }
 
     def __init__(s, log, infer):
         '''
@@ -75,6 +75,10 @@ class IHeap(IOwner):
                             Usually  storage is taken from some big
                             partitioned and shared with another small
                             chunks memory block;
+
+                REL_MAYBE   Probable candidate for REL_CHUNK case but
+                            exact judment is not possible with current
+                            level of discovered data;
 
                 REL_HUGE    a valid allocated huge memory chunk. Usually
                             single mmap() call used for allocating block
