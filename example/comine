@@ -1,7 +1,7 @@
 #!/usr/bin/env python2
 
 from sys        import argv, stderr, exit
-from os         import environ, readlink
+from os         import environ, readlink, access, R_OK, X_OK
 from os.path    import abspath, dirname, islink, isfile, isdir
 from getopt     import getopt
 from itertools  import takewhile
@@ -31,7 +31,7 @@ class Prog(object):
         regs = s.__locate(__file__)
         load = s.__args(argv)
 
-        args = ['gdb', '-ex', 'source %s' % regs]
+        args = [ s.__binary(), '-ex', 'source %s' % regs]
 
         if s.__boot is True:
             args += [ '-ex', 'comine boot']
@@ -53,6 +53,9 @@ class Prog(object):
 
         else:
             return regs
+
+    def __binary(s):
+        return environ.get('COMINE_GDB', 'gdb')
 
     def __args(s, argv):
         layout, attach = None, None
