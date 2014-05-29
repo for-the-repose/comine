@@ -7,13 +7,14 @@ class Trans(object):
     '''Very simple transaction handler for Ring()'''
 
     __slots__ = ('_Trans__ring', '_Trans__pends', '_Trans__auto',
-                    '_Trans__scn')
+                    '_Trans__scn', '_Trans__ered')
 
     def __init__(s, ring, auto = True):
         s.__ring    = ring
         s.__scn     = ring.__scn__()
         s.__pends   = []
         s.__auto    = auto
+        s.__ered    = True
 
     def __enter__(s):   return s
 
@@ -23,14 +24,20 @@ class Trans(object):
 
     def __len__(s):     return len(s.__pends)
 
+    def __nonzero__(s): return s.__ered
+
     def commit(s):
-        if s.__scn != s.__ring.__scn__():
-            raise MapOfSync()
+        try:
+            if s.__scn != s.__ring.__scn__():
+                raise MapOfSync()
 
-        for span in s.__pends:
-            s.__ring.push(span)
+            for span in s.__pends:
+                s.__ring.push(span)
 
-        s.drop()
+            s.drop()
+
+        finally:
+            s.__ered = False
 
     def drop(s):
         s.__pends = []
