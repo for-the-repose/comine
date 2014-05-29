@@ -18,6 +18,7 @@ class Plugs(object):
     def load(s, force = False):
         if not s.__ready:
             from comine.heaps.glibc	import TheGlibcHeap
+            from comine.heaps.lfalloc   import TheLfAlloc
             from comine.cline.heap  import CHead
             from comine.cline.world import CWorld
             from comine.cline.mine  import CMine
