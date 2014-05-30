@@ -115,5 +115,69 @@ class IHeap(IOwner):
 
         raise Exception('not impl')
 
-    def emum(s):
+    def emum(s, rg = None, pred = None, huge = None):
+        '''
+            Yields all known heap chunks using rules:
+
+                1. Do not pass chunks thrown by pred functor, which is
+                    provided by IPred inrerface;
+
+                2. Limit iteration only over a optionally supplied rg
+                    bytes range in address space;
+
+                3. Pass only REL_HUGE chunks if huge is set to True;
+
+                4. Pass only (REL_CHUNK, REL_MAYBE) if huge is False;
+
+                5. Pass all allocated chunks if huge is set to None;
+        '''
+
         raise Exception('not impl')
+
+
+class IPred(object):
+    '''
+        Heap chunk filter predicate functor. Used as
+
+        with func(align) as F:
+            ...
+
+            if func.__prec__(srange):
+                ...
+
+                for it in some_generator():
+                    meta = (rel, at, size, delta)
+
+                    if func(*meta) is True: yield meta
+
+        where align is upper rounding functor to next align size point
+        used in heap impl. Every used size must be prepared according
+        to aligment or predicate should use delta arg in checks.
+    '''
+
+    __slots__  = tuple()
+
+    def __prec__(s, rg):
+        '''
+            Precondition test, heap impl gives sizes range that may be
+            passed to __call__() method while iteration over chunks.
+            Call should return False if any size in this region will
+            never give True result on __call__(s, ,size, ..) invocation.
+
+            Precondition helps to terminate enumerate early with invalid
+            filters passed to enum(() call.
+        '''
+
+        return True
+
+    def __call__(s, rel, at, size, delta):
+        raise Exception('not implemented')
+
+    def begin(s, align):
+        raise Exception('not implemented')
+
+    def __enter__(s):
+        raise Exception('not implemented')
+
+    def __exit__(s, Et, Ev, tb):
+        raise Exception('not implemented')
