@@ -2,10 +2,15 @@
 
 import gdb
 
-from comine.core.heman  import HeMan, IHeap
+from itertools          import chain, ifilter
+
+from comine.iface.heap  import IHeap, IPred
+from comine.core.heman  import HeMan
 from comine.maps.ring   import Ring
 from comine.maps.alias  import Alias
 from comine.misc.humans import Humans
+from comine.misc.types  import Types
+from comine.heaps.pred  import _HNil
 from .errors			import ErrorDamaged
 from .guess				import Guess
 from .arena				import Arena
@@ -20,11 +25,13 @@ class TheGlibcHeap(IHeap):
     def __init__(s, log, infer):
         frame   = gdb.selected_frame()
 
+        props = [ ('upper', TheGlibcHeap.__fn_max_chunk, s) ]
+
         s.__log     = log
         s.__infer   = infer
         s.__libc    = infer.__libc__()
         s.__ready   = False
-        s.__ring    = Ring()
+        s.__ring    = Ring(props = props)
         s.__arena   = []
         s.__mp      = frame.read_var('mp_')
 
@@ -119,6 +126,7 @@ class TheGlibcHeap(IHeap):
         s.__mmaps       = int(s.__mp['n_mmaps'])
         s.__mmap_th     = int(s.__mp['mmap_threshold'])
         s.__mmap_dyn    = not bool(s.__mp['no_dyn_threshold'])
+        s.__mmap_max    = (128 * (1 << 10), s.__mmap_th)
 
         s.__log(1, 'mmap() threshold is %ib, dyn=%s'
                 % (s.__mmap_th, ['no', 'yes'][s.__mmap_dyn]))
@@ -155,18 +163,6 @@ class TheGlibcHeap(IHeap):
 
         return (IHeap.REL_OUTOF, None, None, None, None)
 
-    def enum(s, callback = None, size = None, used = True):
-        ''' Walk through all of known chunks in my heap '''
-
-        if used is True:
-            return s.__enum_used(callback, size)
-
-        elif size is not None:
-            raise Exception('cannot match block size for free list')
-
-        else:
-            raise Exception('not implemented')
-
     def __lookup_rg(s, at, span):
         alias = span.exten().lookup(at, alias = Alias.ALIAS_BEFORE)
 
@@ -187,21 +183,52 @@ class TheGlibcHeap(IHeap):
 
             return (relation, chunk.inset(), offset) + chunk.__netto__()
 
-    def __enum_used(s, callback = None, size = None):
-        ''' Enum given type of objects in arena '''
+    def enum(s, place = None, pred = None, huge = None):
+        pred = Types.ensure(pred, IPred, none = True)
 
-        if size is not None: size = set(map(s.__sc.round, size))
+        with (pred or _HNil()).begin(s.__sc.round) as pred:
+            sizes, cond = s.__enums_rg_cond(huge)
 
-        for span in s.__ring:
-            start, end = span.__rg__()
+            if pred.__prec__(rg = sizes):
+                for span in s.__ring.enum(place, pred = cond):
+                    mmapped = (span.exten().__tag__() == EHeap.TAG_MMAPPED)
 
-            it = Chunk(s.__sc, start, Chunk.TYPE_REGULAR, end = end)
+                    rel = IHeap.REL_HUGE if mmapped else IHeap.REL_CHUNK
 
-            for chunk in it:
-                if size is not None and len(chunk) not in size:
-                    continue
+                    start, end = span.__rg__()
 
-                if chunk.__at__() == s.__top.__at__():
-                    break
+                    it = Chunk(s.__sc, start, Chunk.TYPE_REGULAR, end = end)
 
-                if chunk.is_used(): yield chunk
+                    for chunk in ifilter(lambda x: x.is_used(), it):
+                        meta = (rel, ) + chunk.meta()
+
+                        if not pred or pred(*meta):
+                            yield meta
+
+    def __enums_rg_cond(s, huge):
+        return s.__rg_for_huge(huge), s.__ring_pred_for(huge)
+
+    def __ring_pred_for(s, huge):
+        H2TAG = { True: EHeap.TAG_MMAPPED, False: EHeap.TAGS_SMALL }
+
+        return EHeap.pred(H2TAG.get(huge))
+
+    def __rg_for_huge(s, huge):
+        upper = huge is False or s.__ring.prop('upper')
+
+        if huge is True:
+            return (s.__mmap_max[0], upper)
+
+        elif huge is False:
+            return (0, s.__mmap_max[1])
+
+        else:
+            return (0, upper)
+
+    @classmethod
+    def __fn_max_chunk(cls, ring, heap):
+        pred    = EHeap.pred(EHeap.TAG_MMAPPED)
+        huges   = ring.enum(pred = pred, conv = len)
+
+        return max(chain([ heap.__mmap_max[1] ], huges))
+

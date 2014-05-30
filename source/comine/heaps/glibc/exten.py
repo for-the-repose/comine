@@ -11,6 +11,8 @@ class EHeap(Alias):
     TAG_MMAPPED = 4 # mmap'ed guessed single allocation
     TAG_SINGLE  = 5 # isolated guessed arena fragment
 
+    TAGS_SMALL = (TAG_BOUND, TAG_FRAG, TAG_LEFT, TAG_SINGLE)
+
     __NAMES = {
             TAG_BOUND:      'bound',
             TAG_FRAG:       'frag',
@@ -42,4 +44,8 @@ class EHeap(Alias):
 
     @classmethod
     def pred(cls, tag):
-        return lambda span: span.exten().__tag__() == tag
+        if tag is not None:
+            tags = tag if isinstance(tag, tuple) else (tag,)
+
+            return lambda span: span.exten().__tag__() in tags
+

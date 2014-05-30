@@ -52,17 +52,19 @@ class Chunk(object):
 
         s.__validate__()
 
-    def meta(s):
-        ''' Return metadata about of this chunk: (body, size, used) '''
-
-        offset = s.__sc.OFFSET
-
-        return (s.__at__() + offset, len(s) - offset, s.is_used())
+    def meta(s):    return s.__sc.info(s.__chunk)
 
     def is_used(s):
-        caret = s.clone(Chunk.TYPE_REGULAR).__next__()
+        if s.flag(Flags.MMAPPED):
+            return True
 
-        return (caret.flag(Flags.PREV_IN_USE) != 0)
+        else:
+            after = s.__sc.next(s.__chunk)
+
+            if not s.__end or after < s.__end:
+                flags = after.cast(s.__sc.type_t)['size']
+
+                return bool(flags & Flags.PREV_IN_USE)
 
     def clone(s, kind_of):
         return Chunk(s.__sc, s.__chunk, kind_of, _arena = s.__arena)

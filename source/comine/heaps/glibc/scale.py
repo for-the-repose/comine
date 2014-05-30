@@ -41,10 +41,10 @@ class Scale(Frozen):
     def __str__(s):
         return 'Metrics(%u, page=%u)' % (s.__atom, s.__page)
 
-    def at(s, chunk):
+    def at(s, chunk, off = False):
         ''' Convert chunk pointer to pythonic long object '''
 
-        return long(chunk.cast(s.__addr_t))
+        return long(chunk.cast(s.__addr_t)) + (s.OFFSET if off else 0)
 
     def begin(s, at):
         ''' Return chunk pointer by its first allocated byte '''
@@ -89,7 +89,10 @@ class Scale(Frozen):
 
         return (size, s.__ALIGN if size > s.__MINETT else s.__MINETT)
 
-    def round(s, size, brutto = True):
+    def info(s, chunk):     # -> (first, size, granulariy)
+        return (s.at(chunk, off = True),) + s.netto(chunk)
+
+    def round(s, size, brutto = False):
         ''' Round size to chunk size as it would allocated by heap '''
 
         size = s.align(max(size + s.__BRUTT, s.__MIN))
