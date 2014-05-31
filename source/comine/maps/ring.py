@@ -113,7 +113,7 @@ class Ring(object):
     def enum(s, rg = (None, None), pred = None, conv = None, rev = False):
         used_scn = s.__scn.__seq__()
 
-        rg = s.__locate(Tools.check(rg, True))
+        rg = s.__locate(Tools.check(rg or (None, None), True))
 
         pred = pred or (lambda _: True)
         conv = conv or (lambda span: span)
