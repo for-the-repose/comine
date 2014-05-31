@@ -94,11 +94,24 @@ class HeMan(object):
 
         return map(_get, filter(_pre, s.__heaps.values()))
 
-    def get(s, name, meta = False):
-        heap = s.__heaps.get(name)
+    def get(s, name = None, meta = False):
+        heap = s.__get(name)
 
         if heap is not None:
             return heap if meta else heap.__impl__()
+
+    def __get(s, name):
+        if name is None:
+            ready = filter(lambda x: x.__ready__(), s.__heaps.itervalues())
+
+            if len(ready) > 1:
+                raise Exception('active heap selection is ambigous')
+
+            elif len(ready) == 1:
+                return ready[0]
+
+        else:
+            return s.__heaps.get(name)
 
     @staticmethod
     def register(cls):
