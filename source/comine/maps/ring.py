@@ -21,16 +21,30 @@ class Ring(object):
 
     MATCH_EXACT     = 0;    MATCH_NEAR      = 1
 
-    __slots__ = ('_Ring__regs', '_Ring__scn', '_Ring__seg', '_Ring__by_seq')
+    __slots__ = ('_Ring__regs', '_Ring__scn', '_Ring__seg',
+                    '_Ring__by_seq', '_Ring__props')
 
-    def __init__(s, it = None):
+    def __init__(s, it = None, props = None):
         s.__regs    = []
         s.__scn     = Scn()
         s.__seg     = Segen(start = 1, reuse = True)
         s.__by_seq  = {}
+        s.__props   = []    # [ (name, func, args, scn, value) ]
 
         if it is not None:
             for rg in it: s.make(rg)
+
+        s.__prop_add('__bytes', Ring.__fn_bytes, mine = True)
+
+        for kl in (props or []):
+            if not (isinstance(kl, tuple) and len(kl) >= 2):
+                raise ValueError('invalid property value')
+
+            s.__prop_add(*kl[:2], argv = kl[2:])
+
+    @classmethod
+    def __fn_bytes(cls, ring):
+        return reduce(lambda x, y: x + y, map(len, ring), 0)
 
     def __iter__(s):    return iter(s.__regs)
 
@@ -40,14 +54,15 @@ class Ring(object):
 
     def __scn__(s):     return s.__scn.__seq__()
 
-    def __bytes__(s):
-        return reduce(lambda x, y: x + y, map(len, s.__regs), 0)
+    def __bytes__(s):   return s.__prop_get('__bytes')
 
     def __repr__(s):
         _hum = Humans.bytes(s.__bytes__())
 
         return 'Ring(0x%x, %s %i regs, %s)' \
                     % (id(s), s.__scn, len(s), _hum)
+
+    def prop(s, name):  return s.__prop_get(name)
 
     def bound(s, null = False):
         if len(s.__regs) > 0:
@@ -208,6 +223,31 @@ class Ring(object):
         x0 = 0 if rg[0] is None else _calc_l(rg[0])
 
         return (x0, len(s) if rg[1] is None else _calc_r(rg[1]))
+
+    def __prop_add(s, name, func, mine = False, argv = tuple()):
+        Types.ensure(name, str)
+
+        if not mine and name.startswith('__'):
+            raise ValueError('props with __ prefix reserved')
+
+        if filter(lambda x: x[0] == name, s.__props):
+            raise ValueError('prop %s already registered', name)
+
+        s.__props.append((name, func, argv, None, None))
+
+    def __prop_get(s, prop):
+        for z in xrange(len(s.__props)):
+            name, func, argv, seq, val = s.__props[z]
+
+            if name == prop:
+                if seq != s.__scn.__seq__():
+                    seq, val = s.__scn.__seq__(), func(s, *argv)
+
+                    s.__props[z] = (name, func, argv, seq, val)
+
+                return val
+
+        raise IndexError('prop %s is not found' % prop)
 
 
 class Place(object):
