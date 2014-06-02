@@ -102,6 +102,6 @@ class Scale(Frozen):
     def align(s, size):
         ''' Align size to chunk grid, round up to 2 * size_t '''
 
-        size = int(size)
+        size = int(size) + s.__mask
 
-        return (size + s.__mask) ^ ((size + s.__mask) & s.__mask)
+        return size ^ (size & s.__mask)
