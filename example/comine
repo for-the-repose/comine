@@ -42,7 +42,14 @@ class Prog(object):
         if s.__quit is True:
             args += [ '-ex', 'quit' ]
 
-        Popen(args, env = s.__env_attach()).communicate()
+        sub = Popen(args, env = s.__env_attach())
+
+        while sub.poll() is None:
+            try:
+                sub.communicate()
+
+            except KeyboardInterrupt as E:
+                pass
 
     def __locate(s, self):
         self = readlink(self) if islink(self) else self
