@@ -117,7 +117,11 @@ class IHeap(IOwner):
 
     def emum(s, rg = None, pred = None, huge = None):
         '''
-            Yields all known heap chunks using rules:
+            Yields all known heap chunks as tuples
+
+                tuple := (relation, at, offset, gran)
+
+            using the following rules:
 
                 1. Do not pass chunks thrown by pred functor, which is
                     provided by IPred inrerface;
