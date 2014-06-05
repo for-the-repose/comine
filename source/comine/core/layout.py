@@ -3,7 +3,7 @@
 from os         import stat, access, lstat, listdir, X_OK
 from os.path    import abspath, split, exists, isfile, isdir
 from re         import match
-from itertools  import takewhile
+from itertools  import ifilter, islice
 
 from comine.iface.infer import ILayout, LayoutError
 
@@ -124,6 +124,7 @@ class _Meta(object):
         if exists(full):
             for slot, (kind, pats) in _Meta.SLOTS.iteritems():
                 if _Meta.__match(pats, name):
+
                     if kind == _Meta.FILE:
                         res = isfile(full) and not access(full, X_OK)
 
@@ -140,4 +141,6 @@ class _Meta(object):
 
     @classmethod
     def __match(cls, pats, name):
-        return not list(takewhile(lambda x: not match(x, name), pats))
+        it = ifilter(lambda x: match(x, name), pats)
+
+        return sum(1 for _ in islice(it, 1)) > 0
