@@ -205,7 +205,7 @@ class World(object):
         World.__add(s.__by_prov, provide, rec, uniq = uprov)
 
     def __walk_phys(s, bins = True):
-        names = ['memory']
+        names = ['blobs']
 
         if bins is True:
             names.append('exun')
@@ -234,7 +234,7 @@ class World(object):
 
     @classmethod
     def __is_uniq_prov(cls, provide):
-        return provide in ('memory', 'exun', 'mmaps')
+        return provide in ('blobs', 'exun', 'mmaps')
 
     @classmethod
     def __add(cls, di, key, val, uniq = True):

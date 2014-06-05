@@ -20,7 +20,7 @@ class Core(IOwner):
         s.__read_maps_target()
 
         if len(s.__ring) > 0:
-            infer.register(s, s.__ring, provide = 'memory')
+            infer.register(s, s.__ring, provide = 'blobs')
 
             log(2, 'located %s of core data' %
                     (Humans.bytes(s.__ring.__bytes__()),) )
@@ -55,7 +55,7 @@ class Memory(IOwner):
 
             s.__ring.make(span.__rg__(), exten = exten)
 
-        s.__infer.register(s, s.__ring, provide = 'memory')
+        s.__infer.register(s, s.__ring, provide = 'blobs')
 
 
 class Mappings(IOwner):
