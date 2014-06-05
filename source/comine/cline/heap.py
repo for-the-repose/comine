@@ -3,6 +3,7 @@
 from comine.iface.heap  import IHeap
 from comine.cline.lib   import CLines
 from comine.misc.humans import Humans
+from comine.misc.limit  import Limit, SomeOf
 
 @CLines.register
 class CHead(CLines):
@@ -12,28 +13,20 @@ class CHead(CLines):
         CLines.__init__(s, 'heap', invoke)
 
     def __sub_heap_disq(s, heman, argv):
-        argv = argv or [ 'do' ]
+        heman.disq(force = ((argv and argv[0]) == 'force'))
 
-        sub, argv = argv[0], argv[1:]
+    def __sub_heap_status(s, heman, argv):
+        if len(argv) != 0:
+            raise Exception('unhandled args=%s' % argv)
 
-        if sub == 'status':
-            if len(argv) != 0:
-                raise Exception('unhandled args=%s' % argv)
+        for heap in heman.enum(all = True, meta = True):
+            s.__show_disq_status(heap)
 
-            for heap in heman.enum(all = True, meta = True):
-                s.__show_disq_status(heap)
+    def __sub_heap_log(s, heman, argv):
+        s.__do_for_heap(heman, argv, s.__show_disq_log)
 
-        elif sub == 'log':
-            s.__do_for_heap(heman, argv, s.__show_disq_log)
-
-        elif sub == 'tb':
-            s.__do_for_heap(heman, argv, s.__show_disq_tb)
-
-        elif sub not in ('do', 'force'):
-            raise Exception('invalid arg %s' % argv)
-
-        else:
-            heman.disq(force = ((argv and argv[0]) == 'force'))
+    def __sub_heap_trace(s, heman, argv):
+        s.__do_for_heap(heman, argv, s.__show_disq_tb)
 
     def __do_for_heap(s, heman, argv, do, *kl, **kw):
         if len(argv) > 1:
@@ -109,3 +102,40 @@ class CHead(CLines):
                 raw = heman.__infer__().readvar(aligned, size, gdbval = False)
 
                 print Humans.hexdump(raw,  ident = len(ident) + 2)
+
+    def __sub_heap_enum(s, heman, argv):
+        comb, it = None, heman.get().enum()
+
+        if argv:
+            if len(argv) < 2:
+                raise Exception('at least one more arg required')
+
+            token, value, over, = argv.pop(0), int(argv.pop(0)), None
+
+            if argv:
+                if len(argv) < 2:
+                    raise Exception('at least one more arg required')
+
+                if argv[0] != 'over':
+                    raise Exception('unexpected keyword %s' % argv[0])
+
+                over = int(argv[1])
+
+            if token == 'min':
+                comb = Limit(min, value, key = lambda x: x[2])
+
+            elif token == 'max':
+                comb = Limit(max, value, key = lambda x: x[2])
+
+            elif token == 'some':
+                comb = SomeOf(value, over = over)
+
+        for rel, at, size, gran in (comb or (lambda x: x))(it):
+            rlit = IHeap.REL_NAMES.get(rel, '?%u' % rel)
+            slit = '' if size is None else ('%ub' % size)
+            gran = '' if gran is None else (' ~%ub' % gran)
+
+            print ' %-6s 0x%012x %s%s' % (rlit, at, slit, gran)
+
+        if comb is not None:
+            print '-- limited, seen %u chunks' % comb.__seen__()
