@@ -20,18 +20,23 @@ class Prog(object):
             -u path     set directory with custom plugins
             -b          invoke boot command before target
             -q          quit just after booting comine
+            -t          show traces for python exceptions
     '''
 
     def __init__(s):
         s.__plugs   = None
         s.__boot    = False
         s.__quit    = False
+        s.__trace   = False
 
     def do(s):
         regs = s.__locate(__file__)
         load = s.__args(argv)
 
         args = [ s.__binary(), '-ex', 'source %s' % regs]
+
+        if s.__trace is True:
+            args += [ '-ex', 'set python print-stack full']
 
         if s.__boot is True:
             args += [ '-ex', 'comine boot']
@@ -67,7 +72,7 @@ class Prog(object):
     def __args(s, argv):
         layout, attach = None, None
 
-        opts, left = getopt(argv[1:], 'l:p:u:bhq')
+        opts, left = getopt(argv[1:], 'l:p:u:tbhq')
 
         if len(left) > 0:
             s.__die(1, 'Garbadge at the end of args passed')
@@ -90,6 +95,9 @@ class Prog(object):
 
             elif key == '-q':
                 s.__quit = True
+
+            elif key == '-t':
+                s.__trace = True
 
             elif key == '-h':
                 s.__help()
