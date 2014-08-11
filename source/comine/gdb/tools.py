@@ -7,6 +7,9 @@ from re     import match
 from comine.iface.infer import ILayout
 from comine.misc.types  import Types
 
+class ECall(Exception): pass
+
+
 class Tools(object):
     __slots__ = ('_Tools__space', '_Tools__gin', '_Tools__exec')
 
@@ -32,7 +35,11 @@ class Tools(object):
         return _Enter(s)
 
     def call(s, cmd):
-        return s.__exec(cmd, to_string = True)
+        try:
+            return s.__exec(cmd, to_string = True)
+
+        except gdb.error as E:
+            raise ECall('catched="%s" for "%s"' % (str(E), cmd))
 
     def version(s):
         for line in s.call('show version').split('\n'):
