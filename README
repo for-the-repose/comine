@@ -9,8 +9,8 @@ REQUIREMENTS
 * binaries of all glibc SO files and binary of program being debugged.
     All bins should be taken from native envinroment for program.
     For core mining on an alien hosts special root directory with exact
-	native versions of libraries have to be prepared and passed to gdb
-	via solib-absolute-prefix and debug-file-directory commands.
+    native versions of libraries have to be prepared and passed to gdb
+    via solib-absolute-prefix and debug-file-directory commands.
 
 * debug symbols for glibc package, must me build with at least -g1;
 
@@ -98,7 +98,7 @@ mining work is till done with custom written py extensions.
   (gdb) maps ring
     1     exun Ring(0x1714f70, Scn(0000010d) 269 regs, 24.0mb)
     2     heap Ring(0x177d0a8, Scn(00000003) 3 regs, 2.7mb)
-	0    blobs Ring(0x1714cb0, Scn(0000002a) 42 regs, 43.5mb)
+    0    blobs Ring(0x1714cb0, Scn(0000002a) 42 regs, 43.5mb)
 
   (gdb) maps lookup 0x000001d88840
     +56840  Span(#1 [1d32000, 1f86000) arena #0, bound, 249 aliases)
