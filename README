@@ -1,4 +1,4 @@
-The GLibC heap mining library for gdb
+Core dumps automation mining tool
 
 REQUIREMENTS
 
@@ -17,30 +17,89 @@ REQUIREMENTS
 
 USAGE
 
-example of the library usage may be found in example/ directory. Miner
-initialization throws to stdout some  useful info about discovery progress.
-Typical successfull discovery log may look like this (heap disq command):
+Place all required stuff to deal with core under single directory
+conforming comine core dumps standard layout:
 
+    * drop executable named binary or leave just one file with exec bit,
+
+    * put generated cores with names core[.SUFFIX]. One or more cores
+        may be used within single layout made for the same binary,
+
+    * optionally prepare host root tree under directory 'root' with
+        all used shared libraries and debug symbols. At least glibc
+        files should be presented. The host root '/' will be used in
+        case of ommiting optional root tree.
+
+    * optional /proc/${PID}/map file taken just before core genetaion.
+
+For details about standart layout refer to core.layout.Layout() class.
+
+Then invoke comine tool to load and boot all required debug env passing
+with -l key path to prepared directory with single core or full path to
+one of generated core file:
+
+  $ comine -tb -u plugs -l ./03_1409_leaks/core.3
+
+  registered new heap glibc disq plug
+  loading plug OKEY <- probe
+  loading plug OKEY <- _disb
+  registered new heap lfalloc disq plug
+  loading plug OKEY <- lfalloc
+  collecting memory in world...
+  located 43.5mb of core data
+  discovered 24.0mb in 10 exuns
+  infer works in mode core
+
+Booting done with success, now comine commands and plugins may be used
+for mining core data. Heap discovery usually happens on hext stage:
+
+  (gdb) heap disq
+  heap page size=4096b
   building glibc arena list
-  primary arena at 0x7f3b40bae620 found
-  arena #0 has top chunk at 0x1f29910 +129.7kb
-  data segment starts at 0x17d9000
-  main arena has contigous wild at 0x17d9000 7.4mb
-  arena #0 has 35 chunks and 2064b in 9 fastbins
-  arena #0 has 28 chunks and 60.1kb in 126 bins
-  collecting fragments for arena #0
-  found 1 fence points for arena #0
-  found 7.4mb in 1 fragments
-  arena #0 has at most of 0b unresolved data
-  heap has 1 arena items
+  primary arena entry at 0x7f1f26741e40
+  arena #0 has top chunk at 0x1f7e350 +31.2kb
+  data segment starts at 0x1d32000
+  main arena has contigous wild at 0x1d32000 2.3mb
+
+  < stripped a lot of usefull or less log lines>
+
+  heap has 2 arena items
+  found 0b in 0 frags while left disq
+  found =260.0kb in 1 frags while mmaps disq
   mmap() threshold is 131072b, dyn=yes
+  heap has =260.0kb in 1 mmaps(), all known
+  discovered heap glibc
 
-Good news here is the following lines
+Heaps discovery status with disq. log may be fetched later using
+heap {status, log} subcommands:
 
-> main arena has contigous wild at 0x17d9000 7.4mb
-> arena #0 has at most of 0b unresolved data
+  (gdb) heap status
+  glibc    -> RDY    2014-08-12 01:44:09 +2.0 s
+  myalloc  -> FAIL   2014-08-12 01:44:11 +0.0 s
 
-This means that primary arena region (hols the most of heap data) may be
-completely discovered without any heuristic logic as it is contigous, i.e.
-without holes. And all data in the heap has been traversed.
+Some cli commands available for invocation comine tools but most the
+mining work is till done with custom written py extensions.
 
+  (gdb) heap lookup 0x000001dc0ad0 dump
+  impl glibc -> chunk 0x1dc0ad0 +0, 168b ~16b
+    000 80 0b dc 01 00 00 00 00 a0 0b dc 01 00 00 00 00     ................
+    010 01 00 00 00 00 00 00 00 80 f5 db 01 00 00 00 00     ................
+    020 90 ac d4 01 00 00 00 00 d0 0c dc 01 00 00 00 00     ................
+
+  < stripped unusefull lines >
+
+  (gdb) heap enum some 4
+   chunk  0x000001dc5650 40b ~16b
+   chunk  0x000001d88840 40b ~16b
+   chunk  0x000001db0610 24b ~24b
+   chunk  0x000001dbc560 24b ~24b
+-- limited, seen 8122 chunks
+
+  (gdb) maps ring
+    1     exun Ring(0x1714f70, Scn(0000010d) 269 regs, 24.0mb)
+    2     heap Ring(0x177d0a8, Scn(00000003) 3 regs, 2.7mb)
+	0    blobs Ring(0x1714cb0, Scn(0000002a) 42 regs, 43.5mb)
+
+  (gdb) maps lookup 0x000001d88840
+    +56840  Span(#1 [1d32000, 1f86000) arena #0, bound, 249 aliases)
+    +56840  Span(#4 [1d32000, 1f86000) Core)
