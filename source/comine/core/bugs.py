@@ -47,7 +47,7 @@ class Bugs(object):
 @Bugs.register
 class _GdbPyLeaks(IBug):
     def __ver__(s):
-        return 'gdb', (None, (7, 4, 0))
+        return 'gdb', (None, (7, 5, 0))
 
     def __short__(s):
         return 'python bindings memory leaks'

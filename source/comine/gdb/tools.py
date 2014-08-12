@@ -46,10 +46,12 @@ class Tools(object):
             m = match('GNU gdb \([^)]+\) (.+)', line)
 
             if m is not None:
-                g = match('(\d+)\.(\d+)\.(\d+)?(.*)', m.group(1))
+                g = match('(\d+)\.(\d+)(?:\.(\d+))?(.*)', m.group(1))
 
                 if g is not None:
-                    ver = tuple(map(int, g.groups()[:3]))
+                    _conv = lambda x: x if x is None else int(x)
+
+                    ver = tuple(map(_conv, g.groups()[:3]))
 
                     return ('gdb', ver, g.group(4))
 

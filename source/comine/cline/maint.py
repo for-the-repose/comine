@@ -22,7 +22,7 @@ class CMaint(CLines):
             print 'Using with unknown runtime'
 
         else:
-            ver = '%u.%u.%u' % info[1]
+            ver = '%u.%u.%s' % info[1]
 
             print 'Using with %s %s%s runtime' \
                         % (info[0], ver, info[2])
