@@ -75,14 +75,17 @@ class TheLfAlloc(IHeap):
     def __ready__(s):   return s.__ready
 
     def __prepare_size_info(s, rvar):
-        sizes, heads = map(rvar,
-                    ['nSizeIdxToSize', 'globalCurrentPtr' ])
+        sizes, heads = map(rvar, ['nSizeIdxToSize', 'globalCurrentPtr' ])
 
         s.__sizes = map(lambda x: int(sizes[x]),
                         xrange(sizes.type.range()[1] + 1))
 
-        s.__heads = map(lambda x: s.__libc.addr(heads[x]),
-                        xrange(heads.type.range()[1] + 1))
+        def _h2info(slot):
+            at = s.__libc.addr(heads[slot])
+
+            return (s.__block_for(at), at)
+
+        s.__heads = map(_h2info, xrange(heads.type.range()[1] + 1))
 
         def items(x): return int(TheLfAlloc.BLOCKS / x)
 
@@ -258,7 +261,6 @@ class TheLfAlloc(IHeap):
 
                     if addr in s.__intern:
                         s.__efvec +=1
-
                     else:
                         s.__intern.add(addr)
 
@@ -390,13 +392,14 @@ class TheLfAlloc(IHeap):
             elif index < 0:
                 rel, size = IHeap.REL_KEEP, BLOCKS
             else:
-                size    = s.__sizes[index]
+                size, gran = s.__granz(index)
+
                 item    = int((at - block * BLOCKS) / size)
-                gran    = size - (index >  1 and s.__sizes[index - 1])
+                head    = s.__heads[index]
 
                 chunk += item * size
 
-                if s.__heads[index] > 0 and at >= s.__heads[index]:
+                if head[0] == block and at >= head[1]:
                     gran, rel = None, IHeap.REL_ZERO
                 elif index == s.__fvidx and chunk in s.__intern:
                     gran, rel = None, IHeap.REL_INTERN
@@ -415,7 +418,21 @@ class TheLfAlloc(IHeap):
         return (IHeap.REL_OUTOF, None, None, None, None)
 
     def enum(s, place = None, pred = None, huge = None):
-         with (pred or _HNil()).begin(s.__round) as pred:
+        def _filter(it):
+            for _, rg, index in it:
+                size, gran = s.__granz(index)
+
+                for caret in xrange(rg[0], rg[1], size):
+                    meta = (IHeap.REL_CHUNK, caret, size, gran)
+
+                    if caret in s.__s2free[index]:
+                        pass
+                    elif index == s.__fvidx and caret in s.__intern:
+                        pass
+                    elif pred is None or pred(*meta):
+                        yield meta
+
+        with (pred or _HNil()).begin(s.__round) as pred:
             sizes, cond = s.__enums_rg_cond(huge)
 
             if pred.__prec__(rg = sizes):
@@ -423,9 +440,33 @@ class TheLfAlloc(IHeap):
                     exten   = span and span.exten()
 
                     if exten.__tag__() == EHeap.TAG_SMALL:
-                        raise Exception('Not implemented')
+                        it = s.__enum_small(span.__rg__())
+
+                        for meta in _filter(it): yield meta
+
                     elif exten.__tag__() == EHeap.TAG_MMAP:
-                        yield s.__huge_meta(span)
+                        meta = s.__huge_meta(span)
+
+                        if not pred or pred(*meta):
+                            yield meta
+
+    def __enum_small(s, rg):
+        start, end = map(s.__block_for, rg)
+
+        _2addr = lambda x: x * TheLfAlloc.BLOCKS
+
+        for block in xrange(start, end + 1):
+            index   = int(s.__index[block])
+
+            if index > 0:
+                head = s.__heads[index]
+
+                if block == head[0]:
+                    place = (_2addr(block), head[1])
+                else:
+                    place = (_2addr(block), _2addr(block + 1))
+
+                yield block, place, index
 
     def __huge_meta(s, span, at = None):
         T2REL = { EHeap.TAG_FREE: IHeap.REL_FREE,
@@ -479,6 +520,16 @@ class TheLfAlloc(IHeap):
         for z in xrange(0, len(s.__sizes)):
             if size <= s.__sizes[z]: return z
 
+    def __block_for(s, at):     # -> place | None
+        if s.__small[0] <= at < s.__small[1]:
+            return int(at / TheLfAlloc.BLOCKS)
+
+    def __granz(s, index):      # -> size, gran
+        size    = s.__sizes[index]
+        gran    = size - (index >  1 and s.__sizes[index - 1])
+
+        return (size, gran)
+
     @classmethod
     def __fn_max_chunk(cls, ring, heap):
         pred    = EHeap.pred(tag = EHeap.TAGS_HUGE)
@@ -526,4 +577,5 @@ class EHeap(IExten):
 
     @classmethod
     def pred(cls, tag):
-        return lambda span: span.exten().__tag__() in tag
+        if tag is not None:
+            return lambda span: span.exten().__tag__() in tag
