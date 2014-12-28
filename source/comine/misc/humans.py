@@ -30,7 +30,7 @@ class Humans(object):
 
         for pref, div in scale:
             if not div or time < div:
-                return '%0.1f %s' % (time, pref)
+                return '%0.1f%s' % (time, pref)
 
             else:
                 time /= div
@@ -45,7 +45,7 @@ class Humans(object):
 
     @staticmethod
     def ago(stamp):
-        return Humans.delta(int(time()) - stamp)
+        return Humans.delta(time() - stamp)
 
     @staticmethod
     def hexdump(s, bpl = 16, ident = 0):
