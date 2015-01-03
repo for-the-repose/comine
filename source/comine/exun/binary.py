@@ -14,6 +14,11 @@ from comine.maps.errors import MapConflict
 from comine.maps.ring   import Ring, Span
 
 class Exuns(IOwner):
+    __PHY_SECT = ('.text', '.rodata', '.ctors', '.dtors', '.dynsym',
+                    '.dynstr', '.eh_frame', '.eh_frame_hdr', '.gnu.hash',
+                    '.rela.plt', '.rela.dyn', '.plt', '.interp', '.hash',
+                    '.gnu.version', '.gcc_except_table')
+
     def __init__(s, infer):
         s.__segen   = Segen(1)
         s.__infer   = infer
@@ -53,8 +58,7 @@ class Exuns(IOwner):
                             log(1, 'cannot add %s for %s' % (section, unit))
 
     def __infer_for(s, section):
-        if section in ('.text', '.rodata', '.ctors', '.dtors'):
-            return s.__infer
+        if section in Exuns.__PHY_SECT: return s.__infer
 
     def __locate(s, name, create = True):
         unit = s.__units.get(name)
