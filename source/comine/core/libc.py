@@ -27,6 +27,7 @@ class LibC(object):
         with s.__tools():
             s.__type_add('uintptr_t', alias = 'addr_t')
             s.__type_add('char', True, alias = 'ptr_t')
+            s.__type_add('uint8_t', False, alias = 'byte')
             s.__type_add('size_t')
 
     def __type_add(s, name, ptr = False, alias = None):
