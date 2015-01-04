@@ -1,4 +1,4 @@
-#__ LGPL 3.0, 2014 Alexander Soloviev (no.friday@yandex.ru)
+#__ LGPL 3.0, 2015 Alexander Soloviev (no.friday@yandex.ru)
 
 from re     import match
 
@@ -6,11 +6,12 @@ from comine.iface.world import IOwner, EPhys
 from comine.misc.types  import Types
 from comine.misc.segen  import Segen
 from comine.misc.puts   import Puts
+from comine.misc.func   import gmap
 from comine.maps.span   import Span
 from comine.maps.ring   import Ring
 from comine.maps.walk   import Walk, Diff, Glide, Delay
 from comine.core.base   import EMaps, EMem, ECore, EPadd
-
+from comine.core.freg   import Freg
 
 class World(object):
     USAGE_UNKNOWN   = 0;    USAGE_CONFLICT  = 1
@@ -93,6 +94,17 @@ class World(object):
             elif len(logic) >  0 and not phys:
                 if virtual is True:
                     yield (World.USAGE_VIRTUAL, rg, None,  logic)
+
+    def addrs(s, maps = False, gran = 0):
+        ''' Return address space predicate object '''
+
+        names = ['blobs', 'exun', 'mmap' if maps else None]
+
+        walk = Walk(rings = list(s.__get_rings(names)))
+
+        it = gmap(lambda x: x[0], walk.group(None, None, empty = False))
+
+        return Freg(list(it), model = 'amd64', gran = gran)
 
     def by_iface(s, iface):
         return s.__rings.get(iface)
@@ -212,9 +224,12 @@ class World(object):
         if bins is True:
             names.append('exun')
 
-        it = s.__get_names(names = names)
+        return Walk(rings = list(s.__get_rings(names)))
 
-        return Walk(rings = list(map(lambda x: x[0].__ring__(), it)))
+    def __get_rings(s, names):
+        it = s.__get_names(names)
+
+        return gmap(lambda x: x[0].__ring__(), it)
 
     def __get_names(s, names):
         return filter(None, map(lambda x: s.__by_prov.get(x), names))
