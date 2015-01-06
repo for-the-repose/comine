@@ -7,6 +7,8 @@ from comine.cline.lang  import CFail, Eval, Addr
 from comine.iface.heap  import IHeap
 from comine.mine.revix  import Revix
 from comine.mine.index  import Index, Locate
+from comine.mine.trace  import Trace, Clect
+
 
 @CLines.register
 class CMine(CLines):
@@ -58,3 +60,41 @@ class CMine(CLines):
 
             else:
                 print "  0x%x <- 0x%x" % (at, refer)
+
+    def __sub_mine_trace(s, infer, argv):
+        at      = int(argv.next(), 0)
+        offset  = int(argv.next())
+
+        print "Tracing chunk 0x%x +0%x" % (at, offset)
+
+        index = Locate(infer)
+        trace = Trace(infer, at, offset)
+
+        for seq, at, desc, fall in trace():
+            span = ' '.join(map(lambda x: '+0x%x %s' % x, fall))
+
+            print ' | %02u 0x%x %-8s %s' %  (seq, at, desc, span)
+
+            s.__show_occurance(infer.__world__(), index, rg = (at, at + 1))
+
+    def __sub_mine_anno(s, infer, argv):
+        addr = int(argv.next(), 0)
+        mask = int(argv.next() or '0', 0) 
+
+        it = enumerate(Clect(infer)(addr, mask))
+
+        for seq, (di, rel, at, off, size, gran) in it:
+            rlit = IHeap.REL_NAMES.get(rel, '?%u' % rel)
+
+            print('  #%02u +%04u -> %6s 0x%012x +%4u %8ub ~%ub'
+                    % (seq, di, rlit, at, off, size, gran))
+
+    def __show_occurance(s, world, index, rg):
+        def _enum():
+            for at, ref in index.lookup(rg):
+                for offset, _, span in world.lookup(ref):
+                    yield (at, ref, offset, span)
+
+        for seq, (at, ref, offset, span) in enumerate(_enum()):
+
+            print "    - %2u: %016x, +%08x, %s" % (seq, ref, offset, span)
