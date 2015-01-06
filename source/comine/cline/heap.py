@@ -1,7 +1,7 @@
 #__ LGPL 3.0, 2014 Alexander Soloviev (no.friday@yandex.ru)
 
 from comine.iface.heap  import IHeap
-from comine.cline.lib   import CLines
+from comine.cline.lib   import CFail, CLines
 from comine.misc.humans import Humans
 from comine.misc.limit  import Limit, SomeOf
 
@@ -17,7 +17,7 @@ class CHead(CLines):
 
     def __sub_heap_status(s, heman, argv):
         if len(argv) != 0:
-            raise Exception('unhandled args=%s' % argv)
+            raise CFail('unhandled args=%s' % argv)
 
         for heap in heman.enum(all = True, meta = True):
             s.__show_disq_status(heap)
@@ -30,7 +30,7 @@ class CHead(CLines):
 
     def __do_for_heap(s, heman, argv, do, *kl, **kw):
         if len(argv) > 1:
-            raise Exception('unhandled args=%s' % argv[1:])
+            raise CFail('unhandled args=%s' % argv[1:])
 
         elif len(argv) == 1:
             heap = heman.get(argv[0])
@@ -83,7 +83,7 @@ class CHead(CLines):
             kw['dump'] = True
 
         elif len(argv) > 0:
-            raise Exception('unknown args=%s' % argv)
+            raise CFail('unknown args=%s' % argv)
 
         CHead._lookup(heman, at, **kw)
 
@@ -108,16 +108,16 @@ class CHead(CLines):
 
         if argv:
             if len(argv) < 2:
-                raise Exception('at least one more arg required')
+                raise CFail('at least one more arg required')
 
             token, value, over, = argv.pop(0), int(argv.pop(0)), None
 
             if argv:
                 if len(argv) < 2:
-                    raise Exception('at least one more arg required')
+                    raise CFail('at least one more arg required')
 
                 if argv[0] != 'over':
-                    raise Exception('unexpected keyword %s' % argv[0])
+                    raise CFail('unexpected keyword %s' % argv[0])
 
                 over = int(argv[1])
 

@@ -5,7 +5,7 @@ from struct import pack
 from comine.core.flat   import Flatten
 from comine.core.world  import World
 from comine.core.base   import ECore
-from comine.cline.lib   import CLines
+from comine.cline.lib   import CFail, CLines
 from comine.maps.tools  import Tools
 from comine.misc.humans import Humans, From
 
@@ -16,7 +16,7 @@ class CWorld(CLines):
 
     def __sub_maps_use(s, infer, argv):
         if len(argv) != 1:
-            raise Exception('path to maps file required')
+            raise CFail('path to maps file required')
 
         infer.attach(argv[0])
 
@@ -31,7 +31,7 @@ class CWorld(CLines):
 
     def __sub_maps_walk(s, infer, argv):
         if len(argv) != 1:
-            raise Exception('give ring number')
+            raise CFail('give ring number')
 
         ring = infer.__world__().by_seq(seq = int(argv[0]))
 
@@ -75,7 +75,7 @@ class CWorld(CLines):
             look_heap = True
 
         elif len(argv) != 1:
-            raise Exception('Invalid args=%s' % argv)
+            raise CFail('Invalid args=%s' % argv)
 
         blob = pack('Q',  int(argv[0], 0))
 
@@ -92,7 +92,7 @@ class CWorld(CLines):
 
     def __sub_maps_lookup(s, infer, argv):
         if len(argv) != 1:
-            raise Exception('give only one arg with address')
+            raise CFail('give only one arg with address')
 
         world = infer.__world__()
 
@@ -101,7 +101,7 @@ class CWorld(CLines):
 
     def __sub_maps_save(s, infer, argv):
         if len(argv) != 2:
-            raise Exception('path to maps file required')
+            raise CFail('path to maps file required')
 
         world = infer.__world__()
 
@@ -123,7 +123,7 @@ class CWorld(CLines):
 
     def __sub_maps_show(s, infer, argv):
         if len(argv) != 1:
-            raise Exception('give one of unused, conflict')
+            raise CFail('give one of unused, conflict')
 
         kind =  ('unused', 'conflict', 'virtual')
 
@@ -134,7 +134,7 @@ class CWorld(CLines):
             kw = dict(map(lambda x: (x, True), kind))
 
         else:
-            raise Exception('unknown class=%s' % argv[0])
+            raise CFail('unknown class=%s' % argv[0])
 
         world = infer.__world__()
 
