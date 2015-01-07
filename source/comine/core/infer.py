@@ -25,6 +25,7 @@ class Infer(object):
 
     def __init__(s, tools, source):
         s.__mode        = None
+        s.__source      = source
         s.__gin         = tools.__gin__()
         s.__tools       = tools
         s.__world       = World()
@@ -54,6 +55,9 @@ class Infer(object):
         s.__stack   = Stack(log, s)
 
         s.__heman   = HeMan(s)
+
+    def __layout__(s):
+        return s.__source if isinstance(s.__source, ILayout) else None
 
     def __tools__(s):   return s.__tools
 

@@ -1,6 +1,6 @@
 #__ LGPL 3.0, 2014 Alexander Soloviev (no.friday@yandex.ru)
 
-from os         import stat, access, lstat, listdir, X_OK
+from os         import stat, access, lstat, listdir, mkdir, X_OK
 from os.path    import abspath, split, exists, isfile, isdir
 from re         import match
 from itertools  import ifilter, islice
@@ -22,13 +22,22 @@ class Layout(ILayout):
             .debug conterparts. Directory should be palced with name
             'root';
 
-        4. Optionally copy of /proc/$P{PID}/maps file just before core
-            being dropped under name 'maps'. Current host root tree will
-            be used if there is no provided optional root.
+
+        Each directory may hold the following optional suff
+
+        4. Copy of /proc/$P{PID}/maps file just before core being dropped
+            under name 'maps'. Current host root tree will be used if
+            there is no provided optional root.
+
+        5. Saved cache data in subdir '.cache', generated only by comine
+            code and its plugins, objects lifetime under this directory is
+            entirely controlled by comine.
+
+        6. Reserved subdir '.temp' for temporary files.
     '''
 
     def __init__(s, path):
-        s.__slots = dict(map(lambda x: (x, []), _Meta.SLOTS.keys()))
+        s.__slots = dict(map(lambda x: (x, []), _Meta.keys()))
 
         s.__base    = None
         s.__bin     = None
@@ -46,12 +55,33 @@ class Layout(ILayout):
 
     def __root__(s):    return s.__abs(s.__root)
 
+    def special(s, kind, make = True):
+        if kind not in ('cache', 'temp'):
+            raise ValueError('Unknown special sub %u' % kind)
+
+        path = abspath(s.__base + '/.%s' % kind)
+
+        if isdir(path):
+            pass
+
+        elif exists(path):
+            raise Exception('special path for %s alrady used' % kind)
+
+        elif make is True:
+            mkdir(path)
+
+        else:
+            return None
+
+        return path
+
     def __locate(s, path):    # -> (binary, core, root, maps)
         s.__examine_path(path)
 
         for name in listdir(s.__base):
             for slot in _Meta().check(s.__base, name):
-                s.__slots[slot].append(name)
+                if slot in s.__slots:
+                    s.__slots[slot].append(name)
 
         s.__select_core()
         s.__select_binary()
@@ -111,19 +141,26 @@ class Layout(ILayout):
 class _Meta(object):
     FILE = 1;   EXEC = 2;   DIR = 3
 
-    SLOTS = {
-        'core':     ( FILE,  ('core(\.[\w\d]+)?',) ),
-        'binary':   ( EXEC,  ('binary', '.+') ),
-        'maps':     ( FILE,  ('maps',) ),
-        'root':     ( DIR,   ('root',) ),
-    }
+    __SLOTS = (
+        ('core',    False,  FILE,   ('core(\.[\w\d]+)?',) ),
+        ('root',    False,  DIR,    ('root',) ),
+        ('maps',    False,  FILE,   ('maps',) ),
+        ('binary',  False,  EXEC,   ('binary',) ),
+        ('.cache',  False,  DIR,    ('.cache',) ),
+        ('.temp',   False,  DIR,    ('.temp',) ),
+        ('binary',  True,   EXEC,   ('.+',) ),
+    )
 
     def check(s, base, name):
-        full = base + '/' + name
+        found, full = False, base + '/' + name
 
         if exists(full):
-            for slot, (kind, pats) in _Meta.SLOTS.iteritems():
-                if _Meta.__match(pats, name):
+            for slot, weak, kind, pats in _Meta.__SLOTS:
+                if weak and found:
+                    pass    # Ignore low priotity patterns
+
+                elif _Meta.__match(pats, name):
+                    found = True
 
                     if kind == _Meta.FILE:
                         res = isfile(full) and not access(full, X_OK)
@@ -137,7 +174,17 @@ class _Meta(object):
                     else:
                         continue
 
-                    if res is True: yield slot
+                    if res is True:
+                        yield slot
+
+                    elif not weak:
+                        raise LayoutError('Invalid slot "%s" content' % slot)
+
+    @classmethod
+    def keys(cls):
+        it = map(lambda x: x[0], cls.__SLOTS)
+
+        return filter(lambda x: not x.startswith('.'), it)
 
     @classmethod
     def __match(cls, pats, name):
