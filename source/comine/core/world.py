@@ -26,11 +26,11 @@ class World(object):
         for items in s.__rings.values():
             for rec in items: yield rec
 
-    def lookup(s, at):      # -> [ (offset, rec, span) ]
+    def lookup(s, at, pred = None): # -> [ (offset, rec, span) ]
         def _get(rec):
             span = rec.__ring__().lookup(at)[1]
 
-            if span is not None:
+            if span is not None and (not pred or pred(span)):
                 offset = at - span.__rg__()[0]
 
                 return (offset, rec, span)
@@ -68,7 +68,9 @@ class World(object):
                 yield rg, spans
 
         else:
-            diff = Diff(one = (walk, pred), two = [unused])
+            two = unused if isinstance(unused, tuple) else [ unused ]
+
+            diff = Diff(one = (walk, pred), two = two)
 
             for rg, spans, _ in diff(place, what = Diff.YIELD_ONE):
                 yield rg, spans
