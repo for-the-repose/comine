@@ -132,8 +132,14 @@ class Tools(object):
 
     @staticmethod
     def len(rg):
-        if rg and None not in rg and rg[0] <= rg[1]:
+        if rg is None:
+            pass
+
+        elif Tools.finite(rg) and rg[0] <= rg[1]:
             return rg[1] - rg[0]
+
+        elif not Tools.finite(rg):
+            return Rinf
 
 
 class _Romp(object):
