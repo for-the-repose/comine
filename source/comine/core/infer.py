@@ -10,6 +10,7 @@ from comine.core.logger import log
 from comine.core.world  import World
 from comine.core.base   import Core, Memory, Mappings
 from comine.exun.binary import Exuns
+from comine.exun.stack  import Stack
 from comine.core.heman  import HeMan
 from comine.misc.humans import Humans
 from comine.gdb.tools   import Tools
@@ -34,7 +35,6 @@ class Infer(object):
 
         s.__core    = Core(s)
         s.__memory  = None
-        s.__exuns   = Exuns(s)
         s.__maps    = Mappings(s)
 
         s.__discover_mode(source)
@@ -50,7 +50,12 @@ class Infer(object):
         s.__libc    = LibC(s.__tools)
         s.__addr_t  = s.__libc.std_type('addr_t')
 
+        s.__exuns   = Exuns(s)
+        s.__stack   = Stack(log, s)
+
         s.__heman   = HeMan(s)
+
+    def __tools__(s):   return s.__tools
 
     def __world__(s):   return s.__world
 
