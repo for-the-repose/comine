@@ -8,6 +8,8 @@ from comine.iface.heap  import IHeap
 from comine.mine.revix  import Revix
 from comine.mine.index  import Index, Locate
 from comine.mine.trace  import Trace, Clect
+from comine.mine.lost   import Lost, Walk
+from comine.misc.humans import Humans
 
 
 @CLines.register
@@ -60,6 +62,18 @@ class CMine(CLines):
 
             else:
                 print "  0x%x <- 0x%x" % (at, refer)
+
+    def __sub_mine_lost(s, infer, argv):
+        terms = Lost.terminals(infer.__world__())
+
+        print('found %s terminals in %u regs'
+                % (Humans.bytes(terms.bytes()), len(terms)))
+
+        save = infer.__layout__().special('cache') + '/lost.chunks'
+        heap = infer.__heman__().get()
+        lost = Lost(heap, Locate(infer), terms.make(), cache = 2**20)
+
+        Walk(save)(lost, it = heap.enum())
 
     def __sub_mine_trace(s, infer, argv):
         at      = int(argv.next(), 0)
