@@ -9,7 +9,7 @@ from comine.core.libc   import LibC
 from comine.core.logger import log
 from comine.core.world  import World
 from comine.core.base   import Core, Memory, Mappings
-from comine.core.exun   import Exuns
+from comine.exun.binary import Exuns
 from comine.core.heman  import HeMan
 from comine.misc.humans import Humans
 from comine.gdb.tools   import Tools

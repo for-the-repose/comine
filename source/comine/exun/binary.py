@@ -122,5 +122,3 @@ class EStatic(EInfer):
 
     def __desc__(s):
         return 'EStatic(%s, %s)' % s.__ref
-
-
