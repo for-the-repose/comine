@@ -22,8 +22,8 @@ class Core(IOwner):
         if len(s.__ring) > 0:
             infer.register(s, s.__ring, provide = 'blobs')
 
-            log(2, 'located %s of core data' %
-                    (Humans.bytes(s.__ring.__bytes__()),) )
+            log(2, 'located %s in %u blobs of core' %
+                    (Humans.bytes(s.__ring.__bytes__()), len(s.__ring)) )
 
     def __len__(s): return s.__ring.__len__()
 

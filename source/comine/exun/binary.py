@@ -28,8 +28,9 @@ class Exuns(IOwner):
 
         s.__read_maps()
 
-        log(1, "discovered %s in %u exuns"
-                 % (Humans.bytes(s.__ring.__bytes__()), len(s.__units)))
+        log(1, "located %s in %u spans, %u exuns"
+                 % (Humans.bytes(s.__ring.__bytes__()),
+                        len(s.__ring), len(s.__units)))
 
         infer.register(s, s.__ring, provide = 'exun')
 
