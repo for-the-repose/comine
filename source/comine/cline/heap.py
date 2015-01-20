@@ -78,11 +78,14 @@ class CHead(CLines):
             print heap.__tb__()
 
     def __sub_heap_lookup(s, heman, argv):
+        _Prev = lambda x: None if x == 'all' else int(x, 0)
+
         qry = {
                 0: (-1, None),
 
                 1: (-1, (Addr, 2, ('at',)) ),
-                2: (0, [ ('dump', 0, ('dump', True)) ] )
+                2: (0, [ ('dump', 3, ('dump', 256)) ] ),
+                3: (0, (_Prev, 0, ('dump',)) )
         }
 
         CHead._lookup(heman, **Eval(qry)(argv))
@@ -94,10 +97,15 @@ class CHead(CLines):
 
             print '%simpl %s -> %s' % (ident, impl.__who__(), line)
 
-            if dump is not None and size:
-                raw = heman.__infer__().readvar(aligned, size, gdbval = False)
+            if dump and size:
+                dump = size if dump is True else min(size, (dump + 15) & ~15)
+
+                raw = heman.__infer__().readvar(aligned, dump, gdbval = False)
 
                 print Humans.hexdump(raw,  ident = len(ident) + 2)
+
+                if dump < size:
+                    print '  --- %ub shown, %ub left' % (dump, size - dump)
 
     def __sub_heap_enum(s, heman, argv):
         comb, it = None, heman.get().enum()
