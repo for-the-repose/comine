@@ -6,6 +6,7 @@ from comine.cline.lib   import CLines
 from comine.cline.lang  import CFail, Eval, Addr
 from comine.iface.heap  import IHeap
 from comine.mine.revix  import Revix
+from comine.mine.zero   import Zeroes
 from comine.mine.index  import Index, Locate
 from comine.mine.trace  import Trace, Clect
 from comine.mine.lost   import Lost, Walk
@@ -25,6 +26,15 @@ class CMine(CLines):
             raise CFail('layout with core required')
 
         Revix(infer).build()
+
+    def __sub_mine_zero(s, infer, argv):
+        if argv.next() is not None:
+            raise CFail('command does not accept args')
+
+        if infer.__layout__() is None:
+            raise CFail('layout with core required')
+
+        Zeroes(infer).load()
 
     def __sub_mine_reget(s, infer, argv):
         qry = {
