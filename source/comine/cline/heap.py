@@ -2,7 +2,8 @@
 
 from comine.iface.heap  import IHeap
 from comine.cline.lib   import CLines
-from comine.cline.lang  import CFail, Eval, Addr
+from comine.cline.lang  import CFail, Eval, Addr, Items
+from comine.heaps.pred  import HRange
 from comine.misc.humans import Humans
 from comine.misc.dump   import Dump
 from comine.misc.limit  import Limit, SomeOf
@@ -105,34 +106,67 @@ class CHead(CLines):
                 Dump(heman.__infer__(), True, dump)(rg, len(ident))
 
     def __sub_heap_enum(s, heman, argv):
-        comb, it = None, heman.get().enum()
+        qry = {
+                0: (-1, None),
 
-        if argv:
-            if len(argv) < 2:
-                raise CFail('at least one more arg required')
+                #_ kind of chunks selector
+                1: (2, [
+                        ('huge', 2, ('huge', True)),
+                        ('small', 2, ('huge', False)) ]),
 
-            token, value, over, = argv.pop(0), int(argv.pop(0)), None
+                #_ chunk size selector
+                2: (4, [ ('ge', 3, None)] ),
+                3: (-1, (Items, 4, ('ge',)) ),
+                4: (6, [ ('lt', 5, None)] ),
+                5: (-1, (Items, 6, ('lt',)) ),
 
-            if argv:
-                if len(argv) < 2:
-                    raise CFail('at least one more arg required')
+                #_ sampling range limiter
+                6: (8, [ ('over', 7, None)]),
+                7: (-1, (Items, 8, ('over',)) ),
 
-                if argv[0] != 'over':
-                    raise CFail('unexpected keyword %s' % argv[0])
+                #_ some items selector
+                8: (10, [
+                        ('max', 9, ('aggr',)),
+                        ('min', 9, ('aggr',)),
+                        ('some', 9, ('aggr',))]),
+                9: (-1, (Items, 10, ('show',)) ),
 
-                over = int(argv[1])
+                #_ dump selector
+                10: (0, [ ('dump', 11, ('dump', True)) ]),
+                11: (-1, (Items, 0, ('dump',)))
+        }
 
-            if token == 'min':
-                comb = Limit(min, value, key = lambda x: x[2])
+        kw = Eval(qry)(argv)
 
-            elif token == 'max':
-                comb = Limit(max, value, key = lambda x: x[2])
+        comb, pred, dump = None, None, None
 
-            elif token == 'some':
-                comb = SomeOf(value, over = over)
+        if 'ge' in kw or 'lt' in kw:
+            pred = HRange(rg = (kw.get('ge'), kw.get('lt')))
+
+        if 'aggr' in kw:
+            if kw.get('aggr') == 'min':
+                comb = Limit(min, kw['show'], key = lambda x: x[2])
+
+            elif kw.get('aggr') == 'max':
+                comb = Limit(max, kw['show'], key = lambda x: x[2])
+
+            elif kw.get('aggr') == 'some':
+                comb = SomeOf(kw['show'], over = kw.get('over'))
+
+        if 'dump' in kw:
+            limit = 256 if kw['dump'] is True else kw['dump']
+
+            dump = Dump(heman.__infer__(), True, limit)
+
+        it = heman.get().enum(pred = pred, huge = kw.get('huge', None))
 
         for rel, at, size, gran in (comb or (lambda x: x))(it):
             print IHeap.desc(rel, at, 0, size, gran)
+
+            if dump is not None:
+                dump(rg = (at, at + size), ident = 2)
+
+                print ''
 
         if comb is not None:
             print '-- limited, seen %u chunks' % comb.__seen__()

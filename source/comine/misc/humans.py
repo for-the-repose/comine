@@ -66,7 +66,17 @@ class From(object):
 
             val = int(g[0] or '1')
 
-            suff = g[1] + suff
+            if g[1] is None:
+                return val
 
-            if suff in cls.__BI_SCALE:
-                return val * (1 << cls.__BI_SCALE[suff])
+            elif not g[1].endswith(suff):
+                raise ValueError('unknown suffix %s' % g[1])
+
+            else:
+                suff = g[1][:len(g[1]) - len(suff)]
+
+                if suff in cls.__BI_SCALE:
+                    return val * (1 << cls.__BI_SCALE[suff])
+
+                else:
+                    raise ValueError('unknown suffix %s' % g[1])
