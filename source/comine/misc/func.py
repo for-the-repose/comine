@@ -10,3 +10,9 @@ def yrange(start, end, step = 1):
         yield start
 
         start += step
+
+def find(it, key, fn = lambda x: x, end = None):
+    for some in it:
+        if key == fn(some): return some
+
+    return end

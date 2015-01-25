@@ -2,10 +2,9 @@
 
 from gdb    import Command, COMMAND_OBSCURE, COMPLETE_NONE
 
+from comine.cline.lang  import CFail
 from comine.core.space  import Space
 
-
-class CFail(Exception): pass
 
 class CLines(Command):
     def __init__(s, space, invoke = lambda x, y, z: x(y, z)):

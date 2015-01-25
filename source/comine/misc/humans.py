@@ -75,17 +75,26 @@ class Humans(object):
 
 
 class From(object):
-    __BI_SCALE = { None : 0, 'kb' : 10, 'mb':  20, 'gb': 30, 'tb' : 40,
-                    'pb' : 50, 'eb' : 60, 'zb' : 70, 'yb' : 80 }
+    __BI_SCALE = { None : 0, 'k' : 10, 'm':  20, 'g': 30, 't' : 40,
+                    'p' : 50, 'e' : 60, 'z' : 70, 'y' : 80 }
 
     @classmethod
     def bytes(cls, line):
+        return cls.items(line, suff = 'b')
+
+    @classmethod
+    def items(cls, line, suff = ''):
         g = match('((?:\d+\.?)?(?:\.\d+)?)(\w+)?', line.strip())
 
-        if g is not None:
+        if g is None:
+            raise ValueError('Invalid value literal %s' % line)
+
+        else:
             g = g.groups()
 
             val = int(g[0] or '1')
 
-            if g[1] in cls.__BI_SCALE:
-                return val * (1 << cls.__BI_SCALE[g[1]])
+            suff = g[1] + suff
+
+            if suff in cls.__BI_SCALE:
+                return val * (1 << cls.__BI_SCALE[suff])
