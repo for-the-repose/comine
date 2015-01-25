@@ -3,7 +3,7 @@
 from itertools          import islice, ifilter
 
 from comine.iface.heap  import IPred
-from comine.maps.tools  import Tools
+from comine.maps.tools  import Tools, _Romp
 
 class _HNil(IPred):
     def begin(s, *kl, **kw):    return s
@@ -26,6 +26,7 @@ class HRange(IPred):
         assert s.__ar is None
 
         s.__ar = tuple(map(align, s.__rg))
+        s.__rg = (s.__rg[0], _Romp.make(s.__rg[1]))
 
         return s
 

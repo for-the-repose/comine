@@ -95,9 +95,10 @@ class Scale(Frozen):
     def round(s, size, brutto = False):
         ''' Round size to chunk size as it would allocated by heap '''
 
-        size = s.align(max(size + s.__BRUTT, s.__MIN))
+        if size is not None:
+            size = s.align(max(size + s.__BRUTT, s.__MIN))
 
-        return size if brutto is True else (size - s.__BRUTT)
+            return size if brutto is True else (size - s.__BRUTT)
 
     def align(s, size):
         ''' Align size to chunk grid, round up to 2 * size_t '''
