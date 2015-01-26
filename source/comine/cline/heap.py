@@ -4,7 +4,9 @@ from comine.iface.heap  import IHeap
 from comine.cline.lib   import CLines
 from comine.cline.lang  import CFail, Eval, Addr
 from comine.misc.humans import Humans
+from comine.misc.dump   import Dump
 from comine.misc.limit  import Limit, SomeOf
+
 
 @CLines.register
 class CHead(CLines):
@@ -91,21 +93,16 @@ class CHead(CLines):
         CHead._lookup(heman, **Eval(qry)(argv))
 
     @staticmethod
-    def _lookup(heman, at, ident = '', dump = None):
+    def _lookup(heman, at, ident = '', dump = False):
         for impl, (rel, aligned, offset, size, gran) in heman.lookup(at):
             line = IHeap.desc(rel, aligned, offset, size, gran)
 
             print '%simpl %s -> %s' % (ident, impl.__who__(), line)
 
-            if dump and size:
-                dump = size if dump is True else min(size, (dump + 15) & ~15)
+            rg = (aligned, aligned + size)
 
-                raw = heman.__infer__().readvar(aligned, dump, gdbval = False)
-
-                print Humans.hexdump(raw,  ident = len(ident) + 2)
-
-                if dump < size:
-                    print '  --- %ub shown, %ub left' % (dump, size - dump)
+            if dump is not False:
+                Dump(heman.__infer__(), True, dump)(rg, len(ident))
 
     def __sub_heap_enum(s, heman, argv):
         comb, it = None, heman.get().enum()
