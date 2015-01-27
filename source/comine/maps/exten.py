@@ -15,6 +15,16 @@ class IExten(object):
     def __desc__(s):        # -> str
         return '?'
 
+    def __ident__(s):       # -> tuple(name1,...)
+        '''
+            Returns unique tuple of names identifying exten type and
+            its subtype. The first name in tuple usually holds an
+            exten class name. This ident may be used in different
+            analytical aggregation operations by this key.
+        '''
+
+        return (s.__class__.__name__, )
+
     def __args__(s, rg):    # -> (*kl, **kw)
         '''
             Returns args required for constructing ranged subset copy

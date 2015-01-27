@@ -30,6 +30,9 @@ class EHeap(Alias):
 
     def __arena__(s):   return s.__arena
 
+    def __ident__(s):
+        return (s.__class__.__name__, EHeap.__NAMES.get(s.__tag))
+
     def __desc__(s):
         tlit    = EHeap.__NAMES.get(s.__tag, '?%u' % s.__tag)
         alit    = '#%u' % s.__arena.__seq__() if s.__arena else '?'
