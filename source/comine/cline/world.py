@@ -1,13 +1,16 @@
 #__ LGPL 3.0, 2014 Alexander Soloviev (no.friday@yandex.ru)
 
-from struct import pack
+from struct     import pack
+from itertools  import chain
 
 from comine.core.flat   import Flatten
 from comine.core.world  import World
 from comine.core.base   import ECore
-from comine.cline.lib   import CFail, CLines
+from comine.cline.lib   import CLines
+from comine.cline.lang  import CFail, Eval
 from comine.maps.tools  import Tools
 from comine.misc.humans import Humans, From
+from comine.misc.olap   import Olap
 
 @CLines.register
 class CWorld(CLines):
@@ -161,4 +164,40 @@ class CWorld(CLines):
 
             print '  %5s %8s %s %s' \
                     % (ulit, size, Tools.str(rg, digits=16), desc)
+
+    def __sub_maps_dist(s, infer, argv):
+        qry = {
+                0: (-1, None),
+
+                1: (-1, (str, 2, ('one',)) ),
+                2: (-1, [ ('over', 3, ('over', [])) ]),
+                3: (-1, (str, 4, ('over', )) ),
+                4: (-1, [
+                            (',', 3, None), 
+                            (None, None, None)])
+        }
+
+        kw = Eval(qry)(argv)
+
+        world = infer.__world__()
+
+        one = (world.by_prov(kw['one']) or [None])[0]
+
+        over = set(chain(*map(world.by_prov, kw['over'])))
+
+        if not one or not over:
+            raise CFail('rings not found')
+
+        total = 0
+
+        for seq, (ident, used) in enumerate(Olap()(one, list(over))):
+            total += used
+
+            klit = '.'.join(ident)
+
+            print ' %02u %8s %s' % (seq, Humans.bytes(used), klit)
+
+        print ' -- total %s, ring has %s' \
+                    % (Humans.bytes(total),
+                        Humans.bytes(one.__bytes__()))
 
