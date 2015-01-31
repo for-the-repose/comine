@@ -29,7 +29,7 @@ class CMaint(CLines):
 
     def __sub_comine_open(s, infer, argv):
         try:
-            layout = Layout(argv[0])
+            layout = Layout(argv.next())
 
         except LayoutError as E:
             print E
@@ -38,13 +38,13 @@ class CMaint(CLines):
             Space().open(layout)
 
     def __sub_comine_attach(s, infer, argv):
-        Space().open(int(argv[0]))
+        Space().open(int(argv.next()))
 
     def __sub_comine_this(s, infer, argv):
         Space().open(None)
 
     def __sub_comine_boot(s, infer, argv):
-        Space().boot(fresh = argv and argv[0] == 'reload')
+        Space().boot(fresh = (argv.next() == 'reload'))
 
     def __sub_comine_bugs(s, infer, argv):
         for bug in Bugs().check():

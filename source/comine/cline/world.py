@@ -15,10 +15,7 @@ class CWorld(CLines):
         CLines.__init__(s, 'maps')
 
     def __sub_maps_use(s, infer, argv):
-        if len(argv) != 1:
-            raise CFail('path to maps file required')
-
-        infer.attach(argv[0])
+        infer.attach(argv.next())
 
     def __sub_maps_ring(s, infer, argv):
         world = infer.__world__()
@@ -30,10 +27,7 @@ class CWorld(CLines):
                     % (rec.__seq__(), plit, rec.__ring__())
 
     def __sub_maps_walk(s, infer, argv):
-        if len(argv) != 1:
-            raise CFail('give ring number')
-
-        ring = infer.__world__().by_seq(seq = int(argv[0]))
+        ring = infer.__world__().by_seq(seq = int(argv.next()))
 
         print ring
 
@@ -41,7 +35,7 @@ class CWorld(CLines):
             print '  ', span
 
     def __sub_maps_flat(s, infer, argv):
-        short = not(argv and argv[0] == 'full')
+        short = not(argv.next() == 'full')
 
         it = Flatten(infer.__world__())
 
@@ -69,16 +63,10 @@ class CWorld(CLines):
                         print '  + %s' % (span.desc(prep = ''), )
 
     def __sub_maps_find(s, infer, argv):
-        look_heap = False;
+        blob = pack('Q',  int(argv.next(), 0))
 
-        if len(argv) == 2 and argv[1] == 'heap':
-            look_heap = True
-
-        elif len(argv) != 1:
-            raise CFail('Invalid args=%s' % argv)
-
-        blob = pack('Q',  int(argv[0], 0))
-
+        look_heap = (argv.next() == 'heap')
+        
         it = infer.__world__().search(blob)
 
         for seq, (at, offset, span) in enumerate(it):
@@ -91,27 +79,24 @@ class CWorld(CLines):
                 cmd_heap_lookup._lookup(at, '  ')
 
     def __sub_maps_lookup(s, infer, argv):
-        if len(argv) != 1:
-            raise CFail('give only one arg with address')
+        at      = int(argv.next(), 0)
+        world   = infer.__world__()
 
-        world = infer.__world__()
-
-        for offset, rec, span in world.lookup(int(argv[0], 0)):
+        for offset, rec, span in world.lookup(at):
             print '  %+06x  %s' % (offset, span)
 
     def __sub_maps_save(s, infer, argv):
-        if len(argv) != 2:
-            raise CFail('path to maps file required')
+        name, base = argv.next(), argv.next()
 
         world = infer.__world__()
 
-        entity = world.by_path(argv[0])
+        entity = world.by_path(name)
 
         if entity is None:
-            print 'cannot locate span by path %s' % argv[0]
+            print 'cannot locate span by path %s' % name
 
         else:
-            res = world.save(entity, argv[1], padd = False)
+            res = world.save(entity, base, padd = False)
 
             if res is not None:
                 elit = entity.__class__.__name__
@@ -122,19 +107,16 @@ class CWorld(CLines):
                             Humans.bytes(res[2]))
 
     def __sub_maps_show(s, infer, argv):
-        if len(argv) != 1:
-            raise CFail('give one of unused, conflict')
+        kind = argv.next()
 
-        kind =  ('unused', 'conflict', 'virtual')
+        if kind in ('unused', 'conflict', 'virtual'):
+            kw = dict([(kind, True)])
 
-        if argv[0] in kind:
-            kw = dict([(argv[0], True)])
-
-        elif argv[0] == 'all':
+        elif kind == 'all':
             kw = dict(map(lambda x: (x, True), kind))
 
         else:
-            raise CFail('unknown class=%s' % argv[0])
+            raise CFail('give one of unused, conflict')
 
         world = infer.__world__()
 
@@ -180,9 +162,3 @@ class CWorld(CLines):
             print '  %5s %8s %s %s' \
                     % (ulit, size, Tools.str(rg, digits=16), desc)
 
-    def __qry_lang(s, argv):
-        if len(argv) == 2 and argv[0] == 'larger':
-            kw['larger'] = From.bytes(argv[1])
-
-            if kw['larger'] is None:
-                raise ValueError('cannot convert %s to bytes' % argv[1])

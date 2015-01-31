@@ -2,7 +2,7 @@
 
 from gdb    import Command, COMMAND_OBSCURE, COMPLETE_NONE
 
-from comine.cline.lang  import CFail
+from comine.cline.lang  import CFail, Parse
 from comine.core.space  import Space
 
 
@@ -18,11 +18,13 @@ class CLines(Command):
     def invoke(s, args, tty):
         s.dont_repeat()
 
-        argv = args.split()
+        argv = Parse(args)
+        sub = argv.next()
 
-        sub, argv = argv[0], (argv[1:] if len(argv) > 1 else [])
+        if sub is None:
+            print('next level command expected')
 
-        if not s.__route(sub, argv):
+        elif not s.__route(sub, argv):
             print('Unknown %s sub "%s"' % (s.__name, sub))
 
     def __route(s, sub, argv):

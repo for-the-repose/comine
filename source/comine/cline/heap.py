@@ -1,7 +1,8 @@
 #__ LGPL 3.0, 2014 Alexander Soloviev (no.friday@yandex.ru)
 
 from comine.iface.heap  import IHeap
-from comine.cline.lib   import CFail, CLines
+from comine.cline.lib   import CLines
+from comine.cline.lang  import CFail, Eval, Addr
 from comine.misc.humans import Humans
 from comine.misc.limit  import Limit, SomeOf
 
@@ -13,30 +14,32 @@ class CHead(CLines):
         CLines.__init__(s, 'heap', invoke)
 
     def __sub_heap_disq(s, heman, argv):
-        heman.disq(force = ((argv and argv[0]) == 'force'))
+        heman.disq(force = (argv.next() == 'force'))
 
     def __sub_heap_status(s, heman, argv):
-        if len(argv) != 0:
-            raise CFail('unhandled args=%s' % argv)
+        if argv.next() is not None:
+            raise CFail('too much args passed')
 
         for heap in heman.enum(all = True, meta = True):
             s.__show_disq_status(heap)
 
     def __sub_heap_log(s, heman, argv):
-        s.__do_for_heap(heman, argv, s.__show_disq_log)
+        s.__do_for_heap(heman, argv.next(), s.__show_disq_log)
 
     def __sub_heap_trace(s, heman, argv):
-        s.__do_for_heap(heman, argv, s.__show_disq_tb)
+        s.__do_for_heap(heman, argv.next(), s.__show_disq_tb)
 
     def __do_for_heap(s, heman, argv, do, *kl, **kw):
-        if len(argv) > 1:
-            raise CFail('unhandled args=%s' % argv[1:])
+        name = argv.next()
 
-        elif len(argv) == 1:
-            heap = heman.get(argv[0])
+        if name and argv.next() is not None:
+            raise CFail('too much args passed')
+
+        elif name is not None:
+            heap = heman.get(name)
 
             if heap is None:
-                print 'heap %s not registered' % argv[0]
+                print 'heap %s not registered' % name
 
             else:
                 do(heap, *kl, **kw)
@@ -75,17 +78,14 @@ class CHead(CLines):
             print heap.__tb__()
 
     def __sub_heap_lookup(s, heman, argv):
-        alit, argv = argv[0], (argv[1:] if len(argv) > 1 else [])
+        qry = {
+                0: (-1, None),
 
-        kw, at  = {}, int(str(alit) or '0', 0)
+                1: (-1, (Addr, 2, ('at',)) ),
+                2: (0, [ ('dump', 0, ('dump', True)) ] )
+        }
 
-        if len(argv) == 1 and argv[0] == 'dump':
-            kw['dump'] = True
-
-        elif len(argv) > 0:
-            raise CFail('unknown args=%s' % argv)
-
-        CHead._lookup(heman, at, **kw)
+        CHead._lookup(heman, **Eval(qry)(argv))
 
     @staticmethod
     def _lookup(heman, at, ident = '', dump = None):
