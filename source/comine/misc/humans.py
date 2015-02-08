@@ -8,20 +8,18 @@ class Humans(object):
         v, ex = value, True
         pref = ['b', 'kb', 'mb', 'gb', 'tb', 'pb', 'eb', 'zb', 'yb']
 
-        def _f(v, exact, x):
-            return '%s%.1f%s' % (['', '='][exact], v, pref[x])
+        def _f(v, x):
+            return ('%.3f' % v)[:4] + pref[x]
 
         if v < 1024: return '%ib' % v
 
         for x in xrange(1, len(pref)):
             q, v = (v & 0x3ff, v >> 10)
 
-            ex = ex and q == 0
-
             if v & 0x3ff == v:
                 if v & 0x200: continue
 
-                return _f(v + q / 1024., ex, x)
+                return _f(v + q / 1024., x)
 
     @staticmethod
     def delta(time):
