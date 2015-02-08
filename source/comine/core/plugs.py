@@ -3,7 +3,7 @@
 from os         import environ, listdir
 from os.path    import abspath, isdir
 from imp        import load_source
-from sys        import modules
+from sys        import path, modules
 
 from comine.core.logger import log
 from comine.core.trace  import location
@@ -33,8 +33,16 @@ class Plugs(object):
                 log(1, 'plugs path "%s" is not a directory')
 
             else:
+                s.__plug_lib(plugs)
+
                 for fname in filter(Plugs.__is_pname, listdir(plugs)):
                     s.__plug_load(plugs, fname, force)
+
+    def __plug_lib(s, base):
+        lpath = abspath(base)
+
+        if lpath not in path:
+            path.insert(0, lpath)
 
     def __plug_load(s, path, fname, force = False):
         path    = path + '/' + fname
@@ -67,6 +75,9 @@ class Plugs(object):
             pass
 
         elif name.count('.') > 1:
+            pass
+
+        elif name.startswith('_'):
             pass
 
         else:
