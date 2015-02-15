@@ -90,13 +90,9 @@ class CHead(CLines):
     @staticmethod
     def _lookup(heman, at, ident = '', dump = None):
         for impl, (rel, aligned, offset, size, gran) in heman.lookup(at):
-            rlit = IHeap.REL_NAMES.get(rel, '?%u' % rel)
-            slit = '' if size is None else (', %ub' % size)
-            gran = '' if gran is None else (' ~%ub' % gran)
+            line = IHeap.desc(rel, aligned, offset, size, gran)
 
-            print '%simpl %s -> %s 0x%x %+i%s%s' \
-                        % (ident, impl.__who__(), rlit,
-                            aligned, offset, slit, gran)
+            print '%simpl %s -> %s' % (ident, impl.__who__(), line)
 
             if dump is not None and size:
                 raw = heman.__infer__().readvar(aligned, size, gdbval = False)
@@ -131,11 +127,7 @@ class CHead(CLines):
                 comb = SomeOf(value, over = over)
 
         for rel, at, size, gran in (comb or (lambda x: x))(it):
-            rlit = IHeap.REL_NAMES.get(rel, '?%u' % rel)
-            slit = '' if size is None else ('%ub' % size)
-            gran = '' if gran is None else (' ~%ub' % gran)
-
-            print ' %-6s 0x%012x %s%s' % (rlit, at, slit, gran)
+            print IHeap.desc(rel, at, 0, size, gran)
 
         if comb is not None:
             print '-- limited, seen %u chunks' % comb.__seen__()

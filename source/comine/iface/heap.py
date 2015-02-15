@@ -138,6 +138,14 @@ class IHeap(IOwner):
 
         raise Exception('not impl')
 
+    @classmethod
+    def desc(cls, rel, at, offset, size, gran):
+        rlit = cls.REL_NAMES.get(rel, '?%u' % rel)
+        slit = '' if size is None else (', %ub' % size)
+        gran = '' if gran is None else (' ~%ub' % gran)
+
+        return '%-6s 0x%x %+i%s%s' % (rlit, at, offset, slit, gran)
+
 
 class IPred(object):
     '''
