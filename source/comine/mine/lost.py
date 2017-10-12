@@ -149,7 +149,7 @@ class Lost(object):
 
         it = world.physical(None, unused = ([heap[0], stack[0]], _pred))
 
-        return Freg(regs = list(map(lambda x: x[0], it)), model = 'amd64')
+        return Freg(list(map(lambda x: x[0], it)), model = world.__model__())
 
 
 class _Logger(object):

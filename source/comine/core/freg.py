@@ -6,15 +6,17 @@ from comine.misc.func   import gmap
 
 
 class Freg(object):
-    ''' Fast addr regs lookup object '''
+    ''' Fast addr region lookup object '''
 
     def __init__(s, regs, model, gran = 0):
+        tag = Freq.__model_to_tag(model)
+
         regs = Freg.__glide(regs, gran)
 
         s.__start   = list(map(lambda x: x[0], regs))
         s.__end     = [None] + list(map(lambda x: x[1], regs))
 
-        s.__fn = getattr(s, '_Freg__do_' + model, s.__do_basic)
+        s.__fn = getattr(s, '_Freg__do_' + tag, s.__do_basic)
 
     def make(s):
         '''
@@ -27,6 +29,12 @@ class Freg(object):
         '''
 
         return s.__fn
+
+    @classmethod
+    def __model_to_tag(cls, model):
+        _MODS = { 'i386:x86-64' : 'amd64' }
+
+        return _MODS.get(model, 'basic')
 
     @classmethod
     def __glide(cls, regs, gran):

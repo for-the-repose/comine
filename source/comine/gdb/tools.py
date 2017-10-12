@@ -41,6 +41,14 @@ class Tools(object):
         except gdb.error as E:
             raise ECall('catched="%s" for "%s"' % (str(E), cmd))
 
+    def arch(s):
+        line = s.call('show architecture')
+
+        g = match('.*\(currently ([^ ]+)\).*', line)
+
+        if g is not None:
+            return g.group(1)
+
     def version(s):
         for line in s.call('show version').split('\n'):
             m = match('GNU gdb \([^)]+\) (.+)', line)

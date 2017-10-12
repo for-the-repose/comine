@@ -17,8 +17,9 @@ class World(object):
     USAGE_UNKNOWN   = 0;    USAGE_CONFLICT  = 1
     USAGE_UNUSED    = 2;    USAGE_VIRTUAL   = 3
 
-    def __init__(s):
+    def __init__(s, model):
         s.__seq     = Segen()
+        s.__model   = model
         s.__rings   = {}    # class -> [ Rec() ]
         s.__by_seq  = {}    # seq   -> Rec()
         s.__by_prov = {}
@@ -26,6 +27,8 @@ class World(object):
     def __iter__(s):
         for items in s.__rings.values():
             for rec in items: yield rec
+
+    def __model__(s):   return s.__model
 
     def lookup(s, at, pred = None): # -> [ (offset, rec, span) ]
         def _get(rec):
@@ -104,7 +107,7 @@ class World(object):
 
         it = gmap(lambda x: x[0], walk.group(None, None, empty = False))
 
-        return Freg(list(it), model = 'amd64', gran = gran)
+        return Freg(list(it), model = s.__model, gran = gran)
 
     def by_iface(s, iface):
         return s.__rings.get(iface)

@@ -28,11 +28,10 @@ class Infer(object):
         s.__source      = source
         s.__gin         = tools.__gin__()
         s.__tools       = tools
-        s.__world       = World()
+        s.__world       = World(model = s.__tools.arch())
         s.__attached    = False
-        s.__world       = World()
 
-        log(1, 'collecting memory in world...')
+        log(1, 'disq memory in world model %s' % s.__world.__model__())
 
         s.__core    = Core(s)
         s.__memory  = None
@@ -72,16 +71,6 @@ class Infer(object):
 
     def register(s, *kl, **kw):
         s.__world.push(*kl, **kw)
-
-    def validate(s, pointer, ro = False):
-        addr = int(pointer)
-
-        #__ amd64 ABI allows only 48 bit pointers
-        if pointer >> 48: return False
-
-        #__ lookup in the mappings table
-
-        return True
 
     def attach(s, path):
         s.__maps.use_file(path)
