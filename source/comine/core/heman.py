@@ -179,7 +179,7 @@ class _Inst(object):
                 s.__log(1, "heap impl %s raised with '%s'"
                                % (s.__meta.__who__(), str(E)))
 
-                trace_write(lambda x: tb.append(x), extended = True)
+                trace_write(lambda x: tb.append(x), extended = False)
 
                 s.__tb = ''.join(tb)
 

@@ -8,6 +8,8 @@ from comine.core.world  import World
 from comine.core.base   import ECore
 from comine.cline.lib   import CLines
 from comine.cline.lang  import CFail, Eval
+from comine.cline.heap  import CHead
+from comine.cline.mask  import Mask
 from comine.maps.tools  import Tools
 from comine.misc.humans import Humans, From
 from comine.misc.olap   import Olap
@@ -26,8 +28,7 @@ class CWorld(CLines):
         for rec in world:
             plit = rec.__prov__() or ''
 
-            print " %2u %8s %s" \
-                    % (rec.__seq__(), plit, rec.__ring__())
+            print " %2u %8s %s" % (rec.__seq__(), plit, rec.__ring__())
 
     def __sub_maps_walk(s, infer, argv):
         ring = infer.__world__().by_seq(seq = int(argv.next()))
@@ -49,8 +50,7 @@ class CWorld(CLines):
 
             if seq > 0 and not short: print
 
-            print '-rg=%s %8s %0.2f %0.2f %s' \
-                    % ((place, size) + cov + (cont,))
+            print '-rg=%s %8s %0.2f %0.2f %s' % ((place, size) + cov + (cont,))
 
             if short is False:
                 spans.sort(key = lambda x: x.__rg__()[0])
@@ -66,20 +66,31 @@ class CWorld(CLines):
                         print '  + %s' % (span.desc(prep = ''), )
 
     def __sub_maps_find(s, infer, argv):
-        blob = pack('Q',  int(argv.next(), 0))
+        bits = int(infer.__libc__().std_type('ptr_t').sizeof)
+
+        patt = argv.next()
+
+        blob = Mask(bits, True)(patt)
+
+        print '--patt', patt, repr(blob)
+
+        if blob is None:
+            raise CFail('Cannot parse search literal to mask')
 
         look_heap = (argv.next() == 'heap')
+        heap_dump = (argv.next() == 'dump')
         
         it = infer.__world__().search(blob)
 
         for seq, (at, offset, span) in enumerate(it):
             rg = span.__rg__()
 
-            print "%2u: %016x, +%08x, %s" \
-                    % (seq, at, offset, span)
+            print "%2u: %016x, +%08x, %s" % (seq, at, offset, span)
 
             if look_heap is True:
-                cmd_heap_lookup._lookup(at, '  ')
+                dump = 2**12 if heap_dump else False
+
+                CHead._lookup(infer.__heman__(), at, '  ', dump)
 
     def __sub_maps_lookup(s, infer, argv):
         at      = int(argv.next(), 0)
@@ -97,7 +108,6 @@ class CWorld(CLines):
 
         if entity is None:
             print 'cannot locate span by path %s' % name
-
         else:
             res = world.save(entity, base, padd = False)
 
@@ -114,10 +124,8 @@ class CWorld(CLines):
 
         if kind in ('unused', 'conflict', 'virtual'):
             kw = dict([(kind, True)])
-
         elif kind == 'all':
             kw = dict(map(lambda x: (x, True), kind))
-
         else:
             raise CFail('give one of unused, conflict')
 
@@ -136,13 +144,11 @@ class CWorld(CLines):
                     exten = span.exten()
 
                     return 'Span' if exten is None else exten.__desc__()
-
                 else:
                     return str(span)
 
             elif len(spans) > 1:
                 return '%u spans' % len(spans)
-
             else:
                 return '-'
 
@@ -152,13 +158,10 @@ class CWorld(CLines):
 
             if kind == World.USAGE_UNUSED:
                 desc = _dsingle(rg, phys)
-
             elif kind == World.USAGE_VIRTUAL:
                 desc = _dsingle(rg, logic)
-
             elif kind == World.USAGE_CONFLICT:
                 desc = _dsingle(rg, logic)
-
             else:
                 desc = '?'
 

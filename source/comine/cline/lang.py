@@ -102,7 +102,7 @@ class Parse(object):
             for z in xrange(s.__off, len(s.__line)):
                 char = s.__line[z]
 
-                if not (char.isalnum() or char in '_-+.:'): break
+                if not (char.isalnum() or char in "_-+.:/"): break
 
             z = max(z, s.__off + 1)
 

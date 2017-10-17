@@ -27,10 +27,10 @@ class CHead(CLines):
             s.__show_disq_status(heap)
 
     def __sub_heap_log(s, heman, argv):
-        s.__do_for_heap(heman, argv.next(), s.__show_disq_log)
+        s.__do_for_heap(heman, argv, s.__show_disq_log)
 
     def __sub_heap_trace(s, heman, argv):
-        s.__do_for_heap(heman, argv.next(), s.__show_disq_tb)
+        s.__do_for_heap(heman, argv, s.__show_disq_tb)
 
     def __do_for_heap(s, heman, argv, do, *kl, **kw):
         name = argv.next()
@@ -43,7 +43,6 @@ class CHead(CLines):
 
             if heap is None:
                 print 'heap %s not registered' % name
-
             else:
                 do(heap, *kl, **kw)
         else:
@@ -60,7 +59,6 @@ class CHead(CLines):
         if rg.count(None) < 1:
             when    = Humans.time(rg[0])
             take    = ' +' + Humans.delta(rg[1] - rg[0])
-
         else:
             when, take = '', ''
 
@@ -74,7 +72,7 @@ class CHead(CLines):
                     % (heap.__who__(), when, ago)
 
         for when, level, line in heap.__hist__(level):
-            print " | %02s: %s" % (when, line)
+            print " | %03s: %s" % (when, line)
 
     def __show_disq_tb(s, heap):
         if heap.__tb__() is not None:

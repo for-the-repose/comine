@@ -22,6 +22,7 @@ class Plugs(object):
             from comine.cline.heap  import CHead
             from comine.cline.world import CWorld
             from comine.cline.mine  import CMine
+            from comine.cline.ugly  import CUgly
 
             s.__ready = True
 
