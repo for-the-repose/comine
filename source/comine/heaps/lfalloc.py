@@ -2,7 +2,7 @@
 
 import gdb
 
-from itertools          import chain
+from itertools          import chain, count
 from comine.core.heman  import HeMan, IHeap
 from comine.maps.exten  import IExten
 from comine.maps.ring   import Ring
@@ -37,7 +37,7 @@ class TheLfAlloc(IHeap):
         assert s.__page & s.__mask == 0
 
         s.__s2blo   = None  # small blocks enum, { index -> [ block ] }
-        s.__s2free  = None  # small free chunks, { index -> [ chunk ] }
+        s.__b2free  = None  # small free chunks, { block -> bitmap }
         s.__intern  = set() # chunks of global free lists, [ chunk ]
 
         s.__index   = rvar('chunkSizeIdx')
@@ -65,8 +65,7 @@ class TheLfAlloc(IHeap):
         s.__log(1, 'huge rg at (%x, %x), %s'
                 % (s.__huge + (Humans.region(s.__huge),)))
 
-        s.__prepare_size_info(rvar)
-        s.__locate_fvec_index()
+        s.__traverse_size_info(rvar)
         s.__traverse_small_map()
         s.__check_free_block()
 
@@ -80,17 +79,15 @@ class TheLfAlloc(IHeap):
                     % (s.__esmall, s.__esize, s.__esame, s.__efvec, s.__efblk))
 
         s.__ready = True
+        s.__show_block_stats()
 
     @classmethod
     def __who__(s):     return 'lfalloc'
 
     def __ready__(s):   return s.__ready
 
-    def __prepare_size_info(s, rvar):
+    def __traverse_size_info(s, rvar):
         sizes, heads = map(rvar, ['nSizeIdxToSize', 'globalCurrentPtr' ])
-
-        s.__sizes = map(lambda x: int(sizes[x]),
-                        xrange(sizes.type.range()[1] + 1))
 
         def _h2info(slot):
             at = s.__libc.addr(heads[slot])
@@ -98,27 +95,29 @@ class TheLfAlloc(IHeap):
             return (s.__block_for(at), at)
 
         s.__heads = map(_h2info, xrange(heads.type.range()[1] + 1))
+        s.__sizes = map(lambda x: int(sizes[x]),
+                        xrange(sizes.type.range()[1] + 1))
 
         items = lambda x: int(TheLfAlloc.BLOCKS / x)
         waste = lambda x: (items(x) * x) if x > 0 else  None
 
         s.__waste = map(waste, s.__sizes)
 
-    def __locate_fvec_index(s):
         fvecb = 16 * s.__libc.std_type('ptr_t').sizeof
 
         s.__fvidx = s.__index_for_size(fvecb)
 
         if s.__fvidx is None:
             raise Exception('cannot find index for fvec %ub' % fvecb)
-        else:
-            s.__log(3, 'fvec small index=%u, %ub, %ub rounded'
-                        % (s.__fvidx, fvecb, s.__round(fvecb)))
+
+        s.__log(3, 'small %u buckets [%u, %u]b, fvec %ub(%ub) index=%u'
+                % (len(s.__sizes) - 1, s.__sizes[1], s.__sizes[-1],
+                    fvecb, s.__round(fvecb), s.__fvidx))
 
     def __traverse_small_map(s):
-        s.__s2blo = s.__make_for_sizes(list)
-
         items = s.__index.type.range()[1] + 1
+
+        s.__s2blo = { block : [ ] for block in xrange(-1, len(s.__sizes)) }
 
         size, waste, total, used, chunks, s.__upper = {}, 0, 0, 0, long(), 0
 
@@ -167,6 +166,35 @@ class TheLfAlloc(IHeap):
         s.__log(1, "found %s in small %u chunks %u blocks, %s pads"
                 % (Humans.bytes(total), chunks, used, Humans.bytes(waste)))
 
+    def __show_block_stats(s):
+        s.__log(8, " bucket  bytes   chunks    cfree  cnt  >0 1/4 1/2 3/4 100")
+        s.__log(8, " --------------------------------------------------------")
+
+        for index, blocks in s.__s2blo.items():
+            if index > 0 and len(blocks) > 0:
+                size = s.__sizes[index]
+                caps = int(TheLfAlloc.BLOCKS / size)
+                chunks = caps * len(blocks)
+
+                unused, touch = 0, [ 0, 0, 0, 0, 0 ]
+                _o2, _o4 = (caps >> 1), (caps >> 2)
+
+                lvl = [ 1, _o4, _o2, _o2 + _o4, caps ]
+
+                for num in map(lambda x: len(s.__b2free[x]), blocks):
+                    unused += num
+                    touch[0] += bool(num >= lvl[0])
+                    touch[1] += bool(num >= lvl[1])
+                    touch[2] += bool(num >= lvl[2])
+                    touch[3] += bool(num >= lvl[3])
+                    touch[4] += bool(num >= lvl[4])
+
+                tlit = Humans.bytes(chunks * size)
+                xlit = ' '.join(map(lambda x: '%3u' % x, touch))
+
+                s.__log(8, "  %5u % 5s %8u %8u %4u %s"
+                    % (size, tlit, chunks, unused, len(blocks), xlit))
+
     def __check_free_block(s):
         rvar = gdb.selected_frame().read_var
 
@@ -183,35 +211,29 @@ class TheLfAlloc(IHeap):
                 % (Humans.bytes(s.__unused), blocks, listed, s.__efblk))
 
     def __traverse_free_small(s):
-        s.__s2free = s.__make_for_sizes(set)
+        _items = lambda x: int(TheLfAlloc.BLOCKS/ x)
+        _caps = lambda x: _items(s.__index[x]) if s.__index[x] > 0 else 0
 
-        _psize = lambda x: sum(map(len, x.itervalues()))
+        s.__b2free = [ _BMap(_caps(x)) for x in xrange(s.__upper + 1) ]
 
         for name in ('tls', 'glob'):
-            was = _psize(s.__s2free)
-
-            pack = s.__make_for_sizes(set)
+            was = s.__stat_on_free((0, 0, 0))
             func = getattr(s, '_TheLfAlloc__traverse_free_' + name)
-            nums = sum(gmap(lambda x: 1, func(pack)))
+            nums = sum(gmap(lambda x: 1, func()))
+            grow = s.__stat_on_free(was)
 
-            s.__stat_free_show(nums, pack, name)
+            s.__log(1, "found +%s in free %s %u chunks %u buckets"
+                        % (Humans.bytes(grow[1]), name, grow[0], nums))
 
-            for index in xrange(-1, len(s.__sizes)):
-                s.__s2free[index].update(pack[index])
-
-            delta = (was + _psize(pack)) - _psize(s.__s2free)
-
-            if delta > 0:
-                s.__esame += delta
-
-                s.__log(4, 'free blocks %s isects=%u' % (name, delta))
+            if grow[2] > 0:
+                s.__log(4, 'set %s has %u error chunks' % (name, grow[2]))
 
         s.__traverse_free_pages(lambda x: None, s.__fe_page)
 
         s.__log(1, "found %s in internal %u free vecs"
                     % (Humans.bytes(128 * len(s.__intern)), len(s.__intern)))
 
-    def __traverse_free_tls(s, pack):
+    def __traverse_free_tls(s):
         tls = s.__fe_tls
 
         while s.__libc.addr(tls) != 0x0:
@@ -220,23 +242,21 @@ class TheLfAlloc(IHeap):
                 lv = int(tls['FreePtrIndex'][index])
 
                 for z in xrange(lv, ar.type.range()[1] + 1):
-                    s.__push_small(pack, index, s.__libc.addr(ar[z]))
+                    s.__push_small(index, s.__libc.addr(ar[z]))
 
             tls = tls['pNextInfo']
 
             yield 1
 
-    def __traverse_free_glob(s, pack):
+    def __traverse_free_glob(s):
         pptr_t = s.__libc.std_type('ptr_t').pointer()
 
         for index in xrange(1, len(s.__sizes)):
             def _page(head):
                 ar = head.cast(pptr_t)
 
-                _cast = lambda x: s.__libc.addr(ar[x])
-
-                for at in gmap(_cast, xrange(1, 16)):
-                    s.__push_small(pack, index, at)
+                for x in  xrange(1, 16):
+                    s.__push_small(index, s.__libc.addr(ar[x]))
 
             s.__traverse_free_pages(_page, s.__fe_glob[index])
 
@@ -251,7 +271,7 @@ class TheLfAlloc(IHeap):
 
                 if addr == 0x0:
                     pass
-                elif s.__index_by_addr(addr) != s.__fvidx:
+                elif s.__index_by_addr(addr)[0] != s.__fvidx:
                     s.__log(4, 'invalid fvec 0x%x, in 0x%x' % (addr, start))
                 elif addr in seen:
                     s.__log(4, 'cycled fvec at 0x%x, in 0x%x' % (addr, start))
@@ -270,32 +290,30 @@ class TheLfAlloc(IHeap):
 
                 break
 
-    def __push_small(s, aggr, index, at):
-        if at != 0x0:
-            actual = s.__index_by_addr(at)
+    def __push_small(s, index, at):
+        if not(s.__small[0] <= at < s.__small[1]):
+            s.__esmall += 1
+        else:
+            block = int(at / TheLfAlloc.BLOCKS)
 
-            if actual is None:
-                s.__esmall += 1
-            elif actual != index:
+            if index != s.__index[block]:
                 s.__esize += 1
-            elif at in aggr[index]:
-                s.__esame += 1
             else:
-                aggr[index].add(at)
+                off = int((at % TheLfAlloc.BLOCKS) / s.__sizes[index])
 
-    def __make_for_sizes(s, make):
-        return dict(map(lambda x: (x, make()), xrange(-1, len(s.__sizes))))
+                if s.__b2free[block].add(off):
+                    s.__esame += 1
 
-    def __stat_free_show(s, buckets, inex, cat):
-        ag = s.__stat_on_free(inex)
+    def __stat_on_free(s, was):
+        items, volume, failed = 0, 0, (s.__esame + s.__esmall + s.__esize)
 
-        s.__log(1, "found %s in free %s %u chunks %u buckets"
-                    % (Humans.bytes(ag[1]), cat, ag[0], buckets))
+        it = gmap(lambda x: int(s.__index[x]), xrange(s.__upper + 1))
 
-    def __stat_on_free(s, inex):
-        return reduce(lambda x, y: (x[0] + y[0], x[1] + y[1]),
-                    map(lambda x: (len(x[1]), s.__sizes[x[0]] * len(x[1])),
-                            inex.items()))
+        for bmap, sinx in zip(s.__b2free, it):
+            if sinx > 0:
+                items += len(bmap); volume += len(bmap) * s.__sizes[sinx]
+
+        return (items - was[0], volume - was[1], failed - was[2])
 
     def __traverse_free_large(s):
         stats = [0, 0, 0] # count, bytes, exacts
@@ -419,9 +437,9 @@ class TheLfAlloc(IHeap):
                     gran, rel = None, IHeap.REL_INTERN
                 elif item * size >= s.__waste[index]:
                     rel, size = IHeap.REL_INTERN, BLOCKS - s.__waste[index]
-                elif s.__s2free is None:
+                elif s.__b2free is None:
                     rel = IHeap.REL_MAYBE
-                elif at in s.__s2free[index]:
+                elif s.__b2free[block].__has__(item):
                     rel = IHeap.REL_FREE
 
             return (rel, chunk, at - chunk, size, gran)
@@ -433,15 +451,16 @@ class TheLfAlloc(IHeap):
 
     def enum(s, place = None, pred = None, huge = None):
         def _filter(it):
-            for _, rg, index in it:
+            for block, rg, index in it:
+                is_free_item = s.__b2free[block].__has__
                 size, gran = s.__granz(index)
 
-                for caret in xrange(rg[0], rg[1], size):
-                    meta = (IHeap.REL_CHUNK, caret, size, gran)
+                for item, at in zip(count(), xrange(rg[0], rg[1], size)):
+                    meta = (IHeap.REL_CHUNK, at, size, gran)
 
-                    if caret in s.__s2free[index]:
+                    if is_free_item(item):
                         pass
-                    elif index == s.__fvidx and caret in s.__intern:
+                    elif index == s.__fvidx and at in s.__intern:
                         pass
                     elif pred is None or pred(*meta):
                         yield meta
@@ -464,7 +483,7 @@ class TheLfAlloc(IHeap):
                         if not pred or pred(*meta): yield meta
 
     def __enum_small(s, rg):
-        start, end = map(s.__block_for, rg)
+        start, end = map(s.__block_for, (rg[0], rg[1] - 1))
 
         _2addr = lambda x: x * TheLfAlloc.BLOCKS
 
@@ -527,7 +546,7 @@ class TheLfAlloc(IHeap):
         if s.__small[0] <= at < s.__small[1]:
             block = int(at / TheLfAlloc.BLOCKS)
 
-            return s.__index[block];
+            return s.__index[block], block
 
     def __index_for_size(s, size):
         for z in xrange(0, len(s.__sizes)):
@@ -549,6 +568,30 @@ class TheLfAlloc(IHeap):
         huges   = ring.enum(pred = pred, conv = len)
 
         return max(chain([ heap.__sizes[-1] + 1 ], huges))
+
+
+class _BMap(object):
+    __slots__ = ('_BMap__caps', '_BMap__used', '_BMap__map');
+
+    def __init__(s, caps):
+        s.__caps    = (caps + 7) >> 3
+        s.__used    = 0
+        s.__map     = None
+
+    def __has__(s, x):  return s.__used and s.__map[x >> 3] & (1 << (x & 0x7))
+
+    def __len__(s):     return s.__used
+
+    def add(s, num):
+        num, mask = (num >> 3), (1 << (num & 0x7))
+
+        if s.__used == 0: s.__map = bytearray(s.__caps)
+
+        if not (s.__map[num] & mask):
+            s.__map[num] |= mask
+            s.__used += 1
+        else:
+            return True
 
 
 class EHeap(IExten):
